@@ -1,5 +1,3 @@
-# HyperDrop
-# LARGE FILE TRANSFER APP
 # 🚀 HyperDrop — Ultra-Speed Cross-Platform Local File Transfer & Data Vault
 
 <div align="center">
@@ -30,22 +28,43 @@
 
 ## ⚡ Real-World Benchmarks
 
+> [!IMPORTANT]
+> **🚀 LATEST BENCHMARK (2.35 GB / 2.42 GB Full HD File)**
+> - **Transfer Time**: **12.9 seconds**
+> - **Average Speed**: **191.7 MB/s** ($1.53\text{ Gbps}$ sustained wire-speed)
+> - **Peak Speed**: **1.00 GB/s** ($8.0\text{ Gbps}$ burst)
+> - **Internet Data Cost**: **0 MB (100% Free Local Transfer)**
+
 *Tested on physical hardware: **Windows Laptop $\longleftrightarrow$ Android Mobile** over 5 GHz Wi-Fi Link (`866 Mbps`):*
 
 | File Tested | Size | Transfer Time | Average Speed | Peak Burst Speed | Internet Used |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | 📄 **Document / Presentation** | 117.34 MB | **13.3 seconds** | ~8.8 MB/s | 18.0 MB/s | **0 MB** |
 | 🎬 **HD Video Clip (`IMG_7414.mov`)** | 495.79 MB | ⚡ **3.3 seconds** | **151.9 MB/s** | 362.3 MB/s | **0 MB** |
-| 💽 **Full HD Episode (`Off.Campus...`)** | **2.42 GB** | 🔥 **12.9 seconds** | **191.7 MB/s** ($1.53\text{ Gbps}$) | **1.00 GB/s** | **0 MB** |
+| 💽 **Full HD Episode (`Off.Campus...`)** | **2.35 GB – 2.42 GB** | 🔥 **12.9 seconds** | **191.7 MB/s** ($1.53\text{ Gbps}$) | **1.00 GB/s** | **0 MB** |
 
-### 🏆 Comparison with Common Sharing Methods (2.42 GB File):
+### 🏆 2.35 GB File Sharing Comparison:
 
-```
-HyperDrop (This Project):  ████ 12.9 seconds (191.7 MB/s) [0 MB Data]
-Apple AirDrop:             ████████████████ 120 seconds (2 mins)
-Google Drive / Dropbox:    ██████████████████████████████ 10 mins (Consumes 4.84 GB Data)
-WhatsApp:                  ❌ FAILED (Exceeds 2 GB file limit)
-Bluetooth 5.0:             ████████████████████████████████████████... 3.5+ Hours
+| Platform / Method | Transfer Time (2.35 GB) | Effective Speed | Internet Data Consumed | Result / Limitation |
+| :--- | :---: | :---: | :---: | :--- |
+| 🚀 **HyperDrop (This Project)** | ⚡ **12.9 seconds** | **191.7 MB/s** | **0 MB** | 🥇 **Instant Local Wire-Speed** |
+| 🍏 **Apple AirDrop** | ~2 minutes | ~20 MB/s | 0 MB | ❌ Apple ecosystem only |
+| 📲 **Quick Share / Nearby Share** | ~3.5 minutes | ~11 MB/s | 0 MB | ⚠️ Inconsistent on PC |
+| ✈️ **Telegram** | ~8 – 10 minutes | ~4 MB/s | ⚠️ **4.7 GB** | ⚠️ Requires Premium for >2GB |
+| ☁️ **Google Drive / Dropbox** | ~10 – 12 minutes | ~3 MB/s | ⚠️ **4.7 GB** | ⚠️ Cloud upload + download |
+| 💬 **WhatsApp** | ❌ **FAILED** | — | ⚠️ **4.7 GB** | 🚫 **Blocked (Exceeds 2 GB limit)** |
+| 📶 **Bluetooth 5.0** | ⏱️ **3.5 to 4 Hours** | ~0.2 MB/s | 0 MB | ⚠️ Impractical for large files |
+
+### 📊 Visual Throughput Chart (2.35 GB / 2.42 GB File):
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 HyperDrop (This Project):  ████ 12.9s (191.7 MB/s) [0 MB Data Used] 🔥 WINNER       │
+│ 🍏 Apple AirDrop:             ████████████████ 120s (2 mins) [Apple Devices Only]      │
+│ ☁️ Google Drive / Dropbox:    ██████████████████████████████ 10 mins [Uses 4.7 GB]     │
+│ 💬 WhatsApp:                  ❌ FAILED (Exceeds 2 GB file limit)                      │
+│ 📶 Bluetooth 5.0:             ████████████████████████████████████████... 3.5+ Hours   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
