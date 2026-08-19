@@ -1,0 +1,19 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# HyperDrop Vault & Runtime Storage
+.hyperdrop_vault/
+.hyperdrop_test_storage/
+temp_uploads/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS Generated Files
+.DS_Store
+Thumbs.db

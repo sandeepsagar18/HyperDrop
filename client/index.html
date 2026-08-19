@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyperDrop — Offline Hotspot & Wi-Fi Transfer</title>
+    <link rel="stylesheet" href="css/icons.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="hyperdrop-app">
+        
+        <!-- TOP RADAR & ORBIT ARENA -->
+        <section class="radar-arena-section">
+            <div class="stars-bg"></div>
+            
+            <!-- TOP BAR: BRAND TITLE (LEFT) & CONTROLS (RIGHT) -->
+            <div class="top-nav-bar">
+                <div class="brand-text">
+                    <span class="brand-name">HyperDrop</span>
+                </div>
+
+                <!-- TOP BUTTONS: RENAME, CONNECT & DIAGNOSTICS -->
+                <div class="top-center-controls">
+                    <button id="rename-top-btn" class="pill-btn"><i class="fa-solid fa-pen-to-square"></i> Rename Device</button>
+                    <button id="qr-btn" class="pill-btn"><i class="fa-solid fa-qrcode"></i> Connect Phone QR</button>
+                    <button id="remote-btn" class="pill-btn" style="border-color:rgba(0,242,254,0.4); color:var(--neon-cyan);"><i class="fa-solid fa-earth-americas"></i> Remote Connect</button>
+                    <button id="diag-btn" class="pill-btn" style="border-color:rgba(0,255,135,0.4); color:var(--neon-green);"><i class="fa-solid fa-chart-line"></i> Network Diagnostics</button>
+                </div>
+            </div>
+
+            <!-- Orbit / Radar Arena (Centered Below Controls) -->
+            <div class="orbit-arena">
+                <!-- Glowing Green Radar Sweep Beam -->
+                <div class="radar-sweep-beam"></div>
+
+                <!-- Glowing Orbital Rings -->
+                <div class="orbit-ring ring-outer"></div>
+                <div class="orbit-ring ring-middle"></div>
+                <div class="orbit-ring ring-inner"></div>
+
+                <!-- Discovered Peer Nodes (dynamically rendered around orbit) -->
+                <div id="orbit-peers-container" class="orbit-peers-container"></div>
+
+                <!-- Center Host Device Node (You) -->
+                <div class="device-node center-node" id="host-center-node" title="Click to rename your device">
+                    <div class="node-icon-circle host-circle">
+                        <i id="host-device-icon" class="fa-solid fa-laptop"></i>
+                    </div>
+                    <div class="node-label host-label">
+                        <span id="host-device-label">You (Windows Laptop)</span>
+                        <button id="rename-device-trigger" class="btn-micro-icon" title="Rename this device"><i class="fa-solid fa-pen-to-square"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notice Banner -->
+            <div class="radar-notice-banner">
+                <span class="radar-live-dot"></span>
+                <span><i class="fa-solid fa-satellite-dish"></i> Hybrid Radar: Monitoring Local Wi-Fi, Hotspots, and Remote WebRTC Peers</span>
+            </div>
+        </section>
+
+        <!-- BOTTOM 3-CARD MAIN DASHBOARD -->
+        <main class="dashboard-cards-container">
+            
+            <!-- CARD 1: TRANSMIT DATA -->
+            <div class="dashboard-card card-transmit">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-icon"><i class="fa-solid fa-rocket" style="color: #ff5e7e;"></i></span>
+                        <h2>Transmit Data</h2>
+                    </div>
+                    <span id="staged-badge" class="badge-pill">0 file(s) staged</span>
+                </div>
+
+                <div class="card-body">
+                    <!-- Drop Zone -->
+                    <div id="dropzone" class="transmit-dropzone">
+                        <input type="file" id="file-input" multiple style="display:none;">
+                        <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none;">
+                        
+                        <div class="upload-arrow-glow">
+                            <i class="fa-solid fa-arrow-up-from-bracket"></i>
+                        </div>
+                        <h3 class="dropzone-title">Drag & Drop Files or Folders</h3>
+                        <p class="dropzone-subtitle">No size limits • Direct WebRTC P2P DataChannel</p>
+
+                        <div class="dropzone-actions">
+                            <button id="choose-files-btn" class="btn-pill-choice">
+                                <i class="fa-solid fa-file"></i> Choose Files
+                            </button>
+                            <button id="choose-folder-btn" class="btn-pill-choice">
+                                <i class="fa-solid fa-folder"></i> Choose Folder
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Staged Items List -->
+                    <div id="staged-panel" class="staged-panel" style="display:none;">
+                        <div class="staged-panel-header">
+                            <span>Ready to Send (<span id="staged-count-num">0</span>)</span>
+                            <button id="clear-staged-btn" class="btn-link-action">Clear</button>
+                        </div>
+                        <div id="staged-items-container" class="staged-items-scroll"></div>
+                        <button id="start-transfer-btn" class="btn-send-transmit">
+                            <i class="fa-solid fa-paper-plane"></i> Transmit to Selected Peers
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CARD 2: LIVE TRANSFER ENGINE -->
+            <div class="dashboard-card card-engine">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-icon"><i class="fa-solid fa-bolt" style="color: #ff9900;"></i></span>
+                        <h2>Live Transfer Engine</h2>
+                    </div>
+                    <span class="badge-pill-cyan"><i class="fa-solid fa-sparkles"></i> Direct WebRTC Stream</span>
+                </div>
+
+                <div class="card-body">
+                    <!-- Speedometer Arc Gauge -->
+                    <div class="speedometer-container">
+                        <svg class="speedometer-svg" viewBox="0 0 200 110">
+                            <!-- Background Arc -->
+                            <path class="speed-arc-bg" d="M 25,100 A 75,75 0 0,1 175,100" fill="none" stroke-width="12" stroke-linecap="round" />
+                            <!-- Active Progress Arc -->
+                            <path id="speed-arc-val" class="speed-arc-fg" d="M 25,100 A 75,75 0 0,1 175,100" fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="235" stroke-dashoffset="235" />
+                        </svg>
+                        <div class="speedometer-readout">
+                            <span id="live-speed-value" class="speed-number">0.0</span>
+                            <span class="speed-unit">MB/S</span>
+                        </div>
+                    </div>
+
+                    <!-- 3 Stats Badges -->
+                    <div class="metrics-triple-row">
+                        <div class="metric-box">
+                            <span class="metric-label">PEAK SPEED</span>
+                            <span id="metric-peak-speed" class="metric-val">0.0 MB/s</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">ACTIVE CHANNELS</span>
+                            <span id="metric-active-channels" class="metric-val">0 STREAMING</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">TOTAL MOVED</span>
+                            <span id="metric-total-moved" class="metric-val">0.00 MB</span>
+                        </div>
+                    </div>
+
+                    <!-- Transfer History & Active Queue -->
+                    <div class="queue-section-header">
+                        <span class="queue-title">Transfer History & Active Queue</span>
+                        <div class="queue-actions">
+                            <button id="clear-finished-btn" class="btn-link-action">Clear Finished</button>
+                            <span id="active-queue-count" class="badge-status-cyan">0 Active</span>
+                        </div>
+                    </div>
+
+                    <div id="transfer-queue-list" class="transfer-queue-scroll">
+                        <div class="empty-queue-msg">
+                            <i class="fa-solid fa-gauge-high"></i>
+                            <p>No active transfers</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CARD 3: DATA VAULT & STORAGE -->
+            <div class="dashboard-card card-vault">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-icon"><i class="fa-solid fa-folder-closed" style="color: #4facfe;"></i></span>
+                        <h2>Data Vault & Storage</h2>
+                    </div>
+                    <span id="vault-items-badge" class="badge-pill">0 item(s) in Vault</span>
+                </div>
+
+                <div class="card-body">
+                    <!-- Offline Saved Vault -->
+                    <div class="saved-vault-header">
+                        <span class="section-micro-title">Offline Saved Vault</span>
+                        <button id="clear-vault-btn" class="btn-link-danger">Clear All</button>
+                    </div>
+
+                    <div id="vault-items-container" class="vault-items-scroll">
+                        <div class="empty-queue-msg">
+                            <i class="fa-solid fa-box-open"></i>
+                            <p>No saved files in vault</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- BOTTOM INFO SECTION: CENTERED CLEAN TEXT (NO BOXES) -->
+        <footer class="app-info-footer-clean">
+            <div class="centered-about-text">
+                <h3 class="about-title">HyperDrop — High-Speed Hybrid Local & Remote Peer Transfer</h3>
+                <p class="about-desc">
+                    HyperDrop is a peer-to-peer file transfer engine engineered for instant cross-device sharing directly over local Wi-Fi radio waves (LAN/Hotspot) or remote WebRTC P2P across different networks.
+                </p>
+                <div class="modes-inline-list">
+                    <div class="mode-inline-pill">
+                        <i class="fa-solid fa-wifi" style="color:var(--neon-cyan);"></i>
+                        <span><b>Same Wi-Fi:</b> High-speed local LAN streaming without internet.</span>
+                    </div>
+                    <div class="mode-inline-pill">
+                        <i class="fa-solid fa-mobile-screen-button" style="color:var(--neon-green);"></i>
+                        <span><b>Offline Hotspot:</b> Connect Laptop to Phone Hotspot (Mobile Data OFF).</span>
+                    </div>
+                    <div class="mode-inline-pill">
+                        <i class="fa-solid fa-earth-americas" style="color:#ff9900;"></i>
+                        <span><b>Remote P2P (WebRTC):</b> Transfer across different Wi-Fi networks & Mobile Data.</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom-bar">
+                <span>HyperDrop Engine v2.0 • Hybrid Local LAN & WebRTC P2P</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- MODAL: Select Recipient Device(s) Before Sending -->
+    <div id="recipient-modal" class="modal">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-paper-plane" style="color:var(--neon-cyan);"></i> Select Recipient Device(s)</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px;">
+                    Which device(s) do you want to receive these file(s)?
+                </p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 11px; font-weight: 700; color: var(--text-muted);">DISCOVERED PEERS (LOCAL & REMOTE)</span>
+                    <button id="modal-select-all-btn" class="btn-link-action">Select All</button>
+                </div>
+                <div id="modal-recipient-list" class="recipient-selection-list">
+                    <!-- Populated dynamically -->
+                </div>
+                <button id="confirm-send-btn" class="btn-send-transmit" style="margin-top: 14px;">
+                    <i class="fa-solid fa-paper-plane"></i> Transmit to Selected (<span id="modal-selected-count">0</span>)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Rename Device -->
+    <div id="rename-modal" class="modal">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-pen-to-square" style="color:var(--neon-cyan);"></i> Rename Your Device</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 14px;">
+                    Choose a friendly name so other nearby laptops and phones recognize you on radar:
+                </p>
+                <input type="text" id="rename-input" class="text-input" placeholder="e.g. My MacBook / Pixel 8" maxlength="25">
+                <button id="save-rename-btn" class="btn-primary-glow" style="width: 100%; margin-top: 14px;">
+                    Save Name
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Universal Dynamic QR Code Connect (Local LAN) -->
+    <div id="qr-modal" class="modal">
+        <div class="modal-content glass-card" style="max-width: 440px; text-align: center;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-qrcode" style="color:var(--neon-cyan);"></i> Local Phone Connect</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body qr-modal-body" style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px;">
+                    Scan with any <b>Android or iPhone camera</b> on your Wi-Fi:
+                </p>
+
+                <div id="qr-network-selector" style="margin-bottom: 10px; width: 100%;"></div>
+
+                <div class="qr-container">
+                    <img id="qr-image" alt="Pairing QR Code">
+                </div>
+
+                <div class="ip-direct-url">
+                    <span id="qr-url-text" style="font-weight:700; color:var(--neon-cyan);">http://192.168.x.x:3000</span>
+                    <button id="copy-url-btn" class="btn-micro" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.3);"><i class="fa-solid fa-copy"></i> Copy Link</button>
+                </div>
+
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                    <i class="fa-solid fa-wifi" style="color:var(--neon-cyan);"></i> Both devices must be on the same local network or hotspot
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Remote Connect (WebRTC Cross-Network Pairing) -->
+    <div id="remote-modal" class="modal">
+        <div class="modal-content glass-card" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-earth-americas" style="color:var(--neon-cyan);"></i> Remote WebRTC Transfer</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" style="font-size: 13px;">
+                <div style="display:flex; gap:8px; margin-bottom:14px; background:#050b14; padding:4px; border-radius:8px; border:1px solid #1a2c48;">
+                    <button id="remote-tab-share" class="btn-micro" style="flex:1; padding:6px; background:rgba(0,242,254,0.15); color:var(--neon-cyan); font-weight:700; border-radius:6px; border:none;">
+                        1. Share Code (Host)
+                    </button>
+                    <button id="remote-tab-join" class="btn-micro" style="flex:1; padding:6px; background:transparent; color:var(--text-dim); font-weight:700; border-radius:6px; border:none;">
+                        2. Join Remote Device
+                    </button>
+                </div>
+
+                <!-- Tab 1: Share / Host View -->
+                <div id="remote-view-share">
+                    <div id="remote-tunnel-badge" style="font-size:11px; color:var(--neon-green); font-weight:700; margin-bottom:8px; text-align:center;">
+                        <i class="fa-solid fa-circle-check"></i> Public HTTPS Tunnel (4G/5G Cellular Ready)
+                    </div>
+                    <p style="color:var(--text-dim); margin-bottom:8px; text-align:center; font-size:12px;">
+                        Scan with your mobile camera from any 4G/5G network anywhere:
+                    </p>
+                    
+                    <div style="background:#070d18; border:1px solid var(--neon-cyan); border-radius:10px; padding:12px; text-align:center; margin-bottom:12px; box-shadow:0 0 16px rgba(0,242,254,0.15);">
+                        <!-- Remote QR Code Container -->
+                        <div class="qr-container" style="padding:6px; margin:0 auto 10px; width:180px; height:180px; background:#070d18; border:1px solid rgba(0,242,254,0.3); border-radius:8px; display:flex; align-items:center; justify-content:center;">
+                            <img id="remote-qr-image" style="width:100%; height:100%; border-radius:6px; object-fit:contain;" alt="Remote Pairing QR Code">
+                        </div>
+
+                        <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px;">Or Enter 6-Digit Pairing Code</div>
+                        <div id="remote-share-code" style="font-size:24px; font-weight:900; color:var(--neon-cyan); letter-spacing:3px; margin:4px 0;">GENERATING...</div>
+                        
+                        <div id="remote-tunnel-url-text" style="font-size:10.5px; color:var(--text-dim); word-break:break-all; margin:4px 0 8px;">https://hyperdrop.loca.lt</div>
+
+                        <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+                            <button id="copy-remote-code-btn" class="btn-micro" style="color:var(--neon-green); border-color:rgba(0,255,135,0.4);"><i class="fa-solid fa-copy"></i> Copy Code</button>
+                            <button id="copy-remote-link-btn" class="btn-micro" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.4);"><i class="fa-solid fa-link"></i> Copy Join Link</button>
+                        </div>
+                    </div>
+
+                    <div style="text-align:center; font-size:11px; color:var(--text-dim);">
+                        <i class="fa-solid fa-lock" style="color:var(--neon-green);"></i> Direct P2P WebRTC connection across Wi-Fi & 4G/5G mobile networks.
+                    </div>
+                </div>
+
+                <!-- Tab 2: Join View -->
+                <div id="remote-view-join" style="display:none;">
+                    <p style="color:var(--text-dim); margin-bottom:10px;">
+                        Enter the 6-character code from the remote device:
+                    </p>
+                    <input type="text" id="remote-join-code-input" class="text-input" placeholder="e.g. HD-7890" maxlength="10" style="text-align:center; font-size:20px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
+                    <button id="btn-submit-remote-join" class="btn-primary-glow" style="width:100%; margin-top:12px;">
+                        <i class="fa-solid fa-link"></i> Connect to Remote Device
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Receiver Transfer Authorization -->
+    <div id="auth-modal" class="modal">
+        <div class="modal-content glass-card" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-shield-halved" style="color:var(--neon-cyan);"></i> Incoming File Transfer</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" style="font-size:13px; text-align:center;">
+                <div style="width:50px; height:50px; border-radius:50%; background:rgba(0,242,254,0.15); border:1px solid var(--neon-cyan); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:22px; color:var(--neon-cyan);">
+                    <i class="fa-solid fa-file-arrow-down"></i>
+                </div>
+                <div id="auth-sender-name" style="font-size:15px; font-weight:700; color:#fff; margin-bottom:4px;">Remote Device</div>
+                <p style="color:var(--text-dim); margin-bottom:12px;">wants to send you a file:</p>
+                
+                <div style="background:#070d18; border:1px solid #1a2c48; border-radius:8px; padding:10px; margin-bottom:16px;">
+                    <div id="auth-file-name" style="font-weight:700; color:var(--neon-cyan); word-break:break-all;">filename.zip</div>
+                    <div id="auth-file-size" style="font-size:11px; color:var(--text-dim); margin-top:2px;">0.00 MB</div>
+                </div>
+
+                <div style="display:flex; gap:10px;">
+                    <button id="auth-reject-btn" class="btn-micro" style="flex:1; padding:10px; color:var(--neon-red); border-color:rgba(255,0,85,0.4); font-size:13px; font-weight:700;">
+                        Reject
+                    </button>
+                    <button id="auth-accept-btn" class="btn-primary-glow" style="flex:1; padding:10px; font-size:13px;">
+                        Accept & Receive
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: In-App Vault Media / File Previewer -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-content glass-card" style="max-width: 680px;">
+            <div class="modal-header">
+                <h3 id="preview-title"><i class="fa-solid fa-eye" style="color:var(--neon-cyan);"></i> File Preview</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="preview-body" style="padding: 16px; min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                <!-- Dynamically rendered video / audio / image / PDF preview -->
+            </div>
+            <div class="modal-footer" id="preview-footer" style="display: flex; gap: 8px;">
+                <!-- Download button -->
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Network Diagnostics Screen -->
+    <div id="diag-modal" class="modal">
+        <div class="modal-content glass-card" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-chart-line" style="color:var(--neon-green);"></i> Network Diagnostics & Subnet Health</h3>
+                <button class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="diag-body" style="font-size: 12px;">
+                <div style="display:flex; justify-content:center; padding:20px;">
+                    <i class="fa-solid fa-spinner fa-spin" style="font-size:24px; color:var(--neon-cyan);"></i>
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:10px; color:var(--neon-green); font-weight:700;"><i class="fa-solid fa-circle-check"></i> Hybrid Local & Remote Ready</span>
+                <button class="btn-micro" onclick="window.app.fetchDiagnostics()" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.3);"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Toast Notification for New Devices -->
+    <div id="live-toast" class="live-toast" style="display:none;">
+        <i class="fa-solid fa-satellite-dish"></i> <span id="toast-text">New device detected!</span>
+    </div>
+
+    <script src="js/transport/transferTransport.js"></script>
+    <script src="js/transport/localTransport.js"></script>
+    <script src="js/transport/webrtcTransport.js"></script>
+    <script src="js/transport/connectionManager.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        // Clean up any stale service workers to ensure direct HTTP load on mobile
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(regs => {
+                for (let reg of regs) reg.unregister();
+            }).catch(() => {});
+        }
+    </script>
+</body>
+</html>

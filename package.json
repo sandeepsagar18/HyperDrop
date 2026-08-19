@@ -1,0 +1,28 @@
+{
+  "name": "hyperdrop",
+  "version": "1.0.0",
+  "description": "High-Speed Offline Wi-Fi & Hotspot File Transfer App with Worker Stream Engine & App Vault",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node test/transfer_bench.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "localtunnel": "^2.0.2",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.3",
+    "ws": "^8.17.0"
+  },
+  "keywords": [
+    "file-transfer",
+    "offline",
+    "hotspot",
+    "wifi",
+    "worker-stream",
+    "vault"
+  ],
+  "author": "HyperDrop Team",
+  "license": "MIT"
+}
