@@ -10,13 +10,25 @@ const { exportFileToStorage, batchExportToStorage, getSystemDirectories } = requ
 const tunnelManager = require('../network/tunnelManager');
 const crypto = require('crypto');
 
+const os = require('os');
 const activeSessions = new Map(); // token -> { deviceId, deviceName, createdAt }
+
+const TEMP_UPLOADS_DIR = process.env.VERCEL
+    ? path.join(os.tmpdir(), '.hyperdrop_vault', 'temp_uploads')
+    : path.join(process.cwd(), '.hyperdrop_vault', 'temp_uploads');
 
 function createApiRouter({ discoveryEngine, workerPool, appState }) {
     const router = express.Router();
 
+    // Ensure temp_uploads directory exists
+    try {
+        if (!fs.existsSync(TEMP_UPLOADS_DIR)) {
+            fs.mkdirSync(TEMP_UPLOADS_DIR, { recursive: true });
+        }
+    } catch (e) {}
+
     // Storage for direct uploads from web browser
-    const upload = multer({ dest: path.join(process.cwd(), '.hyperdrop_vault', 'temp_uploads') });
+    const upload = multer({ dest: TEMP_UPLOADS_DIR });
 
     // 0. Handshake Protocol
     router.post('/handshake', (req, res) => {
