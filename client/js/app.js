@@ -328,16 +328,24 @@ class HyperDropApp {
         const folderInput = document.getElementById('folder-input');
 
         document.getElementById('choose-files-btn').addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
+            fileInput.value = '';
             fileInput.click();
         });
 
         document.getElementById('choose-folder-btn').addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
+            folderInput.value = '';
             folderInput.click();
         });
 
-        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('click', (e) => {
+            if (e.target.closest('#choose-folder-btn') || e.target.closest('#choose-files-btn')) return;
+            fileInput.value = '';
+            fileInput.click();
+        });
 
         dropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -346,20 +354,39 @@ class HyperDropApp {
 
         dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
 
-        dropzone.addEventListener('drop', (e) => {
+        dropzone.addEventListener('drop', async (e) => {
             e.preventDefault();
             dropzone.classList.remove('dragover');
-            if (e.dataTransfer.files.length) {
-                this.addStagedFiles(e.dataTransfer.files);
+            
+            const files = [];
+            const items = e.dataTransfer.items;
+            if (items && items.length > 0 && items[0].webkitGetAsEntry) {
+                for (let i = 0; i < items.length; i++) {
+                    const entry = items[i].webkitGetAsEntry();
+                    if (entry) {
+                        const entryFiles = await this.readEntryAsync(entry);
+                        files.push(...entryFiles);
+                    }
+                }
+            } else if (e.dataTransfer.files.length) {
+                for (let f of e.dataTransfer.files) files.push(f);
+            }
+
+            if (files.length) {
+                this.addStagedFiles(files);
             }
         });
 
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length) this.addStagedFiles(e.target.files);
+            if (e.target.files && e.target.files.length) {
+                this.addStagedFiles(Array.from(e.target.files));
+            }
         });
 
         folderInput.addEventListener('change', (e) => {
-            if (e.target.files.length) this.addStagedFiles(e.target.files);
+            if (e.target.files && e.target.files.length) {
+                this.addStagedFiles(Array.from(e.target.files));
+            }
         });
 
         // Staged actions
@@ -913,11 +940,47 @@ class HyperDropApp {
         container.insertBefore(card, container.firstChild);
     }
 
+    async readEntryAsync(entry, path = '') {
+        if (entry.isFile) {
+            return new Promise((resolve) => {
+                entry.file((file) => {
+                    file.relativePath = path ? `${path}/${file.name}` : file.name;
+                    resolve([file]);
+                }, () => resolve([]));
+            });
+        } else if (entry.isDirectory) {
+            const dirReader = entry.createReader();
+            const entries = await new Promise((resolve) => {
+                const results = [];
+                const readAll = () => {
+                    dirReader.readEntries((batch) => {
+                        if (batch.length === 0) {
+                            resolve(results);
+                        } else {
+                            results.push(...batch);
+                            readAll();
+                        }
+                    }, () => resolve(results));
+                };
+                readAll();
+            });
+
+            const files = [];
+            for (const child of entries) {
+                const subFiles = await this.readEntryAsync(child, path ? `${path}/${entry.name}` : entry.name);
+                files.push(...subFiles);
+            }
+            return files;
+        }
+        return [];
+    }
+
     // --- Staging & Sending Files ---
     addStagedFiles(fileList) {
         for (const file of fileList) {
             this.stagedFiles.push(file);
-            this.cachedFiles.set(file.name, file);
+            const key = file.webkitRelativePath || file.relativePath || file.name;
+            this.cachedFiles.set(key, file);
         }
         this.renderStagedFiles();
         // Automatically open recipient selection modal when files are dropped!
@@ -929,12 +992,10 @@ class HyperDropApp {
         const container = document.getElementById('staged-items-container');
         const badge = document.getElementById('staged-badge');
         const numLabel = document.getElementById('staged-count-num');
-        const count = this.stagedFiles.length;
-
-        badge.textContent = `${count} file(s) staged`;
-        numLabel.textContent = count;
-
-        if (count === 0) {
+        
+        if (this.stagedFiles.length === 0) {
+            badge.textContent = '0 file(s) staged';
+            numLabel.textContent = 0;
             panel.style.display = 'none';
             return;
         }
@@ -942,15 +1003,66 @@ class HyperDropApp {
         panel.style.display = 'block';
         container.innerHTML = '';
 
+        // Group into Folders and Standalone Files
+        const folderGroups = new Map(); // folderName -> { name, files: [], totalSize: 0 }
+        const standaloneFiles = [];
+
         this.stagedFiles.forEach(file => {
+            const relPath = file.webkitRelativePath || file.relativePath;
+            if (relPath && relPath.includes('/')) {
+                const rootFolder = relPath.split('/')[0];
+                if (!folderGroups.has(rootFolder)) {
+                    folderGroups.set(rootFolder, { name: rootFolder, files: [], totalSize: 0 });
+                }
+                const group = folderGroups.get(rootFolder);
+                group.files.push(file);
+                group.totalSize += file.size;
+            } else {
+                standaloneFiles.push(file);
+            }
+        });
+
+        const totalItemsCount = folderGroups.size + standaloneFiles.length;
+        badge.textContent = `${folderGroups.size > 0 ? `${folderGroups.size} Folder(s) (` + this.stagedFiles.length + ` files)` : `${this.stagedFiles.length} file(s) staged`}`;
+        numLabel.textContent = totalItemsCount;
+
+        // 1. Render Folders as Unified Cards
+        folderGroups.forEach(folder => {
+            const item = document.createElement('div');
+            item.style.display = 'flex';
+            item.style.justifyContent = 'space-between';
+            item.style.alignItems = 'center';
+            item.style.fontSize = '12px';
+            item.style.padding = '8px 10px';
+            item.style.background = 'rgba(255, 153, 0, 0.08)';
+            item.style.border = '1px solid rgba(255, 153, 0, 0.3)';
+            item.style.borderRadius = '8px';
+            item.style.marginBottom = '6px';
+
+            item.innerHTML = `
+                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                    <i class="fa-solid fa-folder-open" style="font-size:18px; color:var(--neon-orange);"></i>
+                    <div style="overflow:hidden; text-overflow:ellipsis;">
+                        <div style="font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📁 ${folder.name}/</div>
+                        <div style="font-size:10.5px; color:var(--text-dim);">${folder.files.length} file(s) inside folder</div>
+                    </div>
+                </div>
+                <div style="font-weight:800; color:var(--neon-orange); font-size:11.5px; white-space:nowrap;">${this.formatBytes(folder.totalSize)}</div>
+            `;
+            container.appendChild(item);
+        });
+
+        // 2. Render Standalone Files
+        standaloneFiles.forEach(file => {
             const item = document.createElement('div');
             item.style.display = 'flex';
             item.style.justifyContent = 'space-between';
             item.style.fontSize = '11px';
             item.style.padding = '4px 0';
+
             item.innerHTML = `
-                <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">
-                    <i class="fa-solid fa-file" style="color:var(--neon-cyan);"></i> ${file.name}
+                <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;" title="${file.name}">
+                    <i class="fa-solid fa-file" style="color:var(--neon-cyan); margin-right:4px;"></i> ${file.name}
                 </span>
                 <span style="color:var(--text-dim);">${this.formatBytes(file.size)}</span>
             `;
@@ -1032,6 +1144,7 @@ class HyperDropApp {
 
     async streamFileToPeer(file, peer) {
         const workerId = `w_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const fileName = file.webkitRelativePath || file.relativePath || file.name;
         
         // 1. Get Hybrid Transport (Local LAN vs Remote WebRTC)
         const transport = await this.connectionManager.getTransportForPeer(peer);
@@ -1039,11 +1152,11 @@ class HyperDropApp {
         const CHUNK_SIZE = transport.chunkSize || (isRemote ? (64 * 1024) : (4 * 1024 * 1024));
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
 
-        console.log(`[TRANSFER] Initiating ${isRemote ? 'Remote WebRTC' : 'Local LAN'} streaming for "${file.name}" (${this.formatBytes(file.size)}) to ${peer.name}`);
+        console.log(`[TRANSFER] Initiating ${isRemote ? 'Remote WebRTC' : 'Local LAN'} streaming for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
 
         const workerData = {
             id: workerId,
-            fileName: file.name,
+            fileName: fileName,
             fileSize: file.size,
             targetPeer: peer,
             status: 'streaming',
@@ -1069,7 +1182,7 @@ class HyperDropApp {
                     data: {
                         sessionId: peer.sessionId,
                         fileId: workerId,
-                        fileName: file.name,
+                        fileName: fileName,
                         fileSize: file.size,
                         senderName: this.clientName,
                         totalChunks,
@@ -1084,7 +1197,7 @@ class HyperDropApp {
             if (resumeStatus && resumeStatus.startChunkIndex > 0) {
                 startChunkIndex = resumeStatus.startChunkIndex;
                 workerData.bytesTransferred = startChunkIndex * CHUNK_SIZE;
-                console.log(`[TRANSFER] Resuming "${file.name}" from chunk ${startChunkIndex}/${totalChunks}`);
+                console.log(`[TRANSFER] Resuming "${fileName}" from chunk ${startChunkIndex}/${totalChunks}`);
             }
 
             let lastCheckTime = Date.now();
@@ -1092,7 +1205,7 @@ class HyperDropApp {
 
             for (let i = startChunkIndex; i < totalChunks; i++) {
                 if (workerData.status === 'cancelled') {
-                    console.log(`[TRANSFER] Transfer cancelled for ${file.name}`);
+                    console.log(`[TRANSFER] Transfer cancelled for ${fileName}`);
                     return;
                 }
 
@@ -1102,7 +1215,7 @@ class HyperDropApp {
 
                 await transport.sendChunk(chunkBlob, {
                     fileId: workerId,
-                    fileName: file.name,
+                    fileName: fileName,
                     fileSize: file.size,
                     chunkIndex: i,
                     totalChunks,
