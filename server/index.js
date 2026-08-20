@@ -186,19 +186,21 @@ wss.on('connection', (ws, req) => {
     });
 });
 
-// Start Server
-server.listen(PORT, '0.0.0.0', () => {
-    const ip = getPrimaryIp();
-    console.log(`=======================================================`);
-    console.log(`⚡ HyperDrop Server running at: http://${ip}:${PORT}`);
-    console.log(`⚡ Local Access: http://localhost:${PORT}`);
-    console.log(`⚡ UDP Peer Discovery Engine running on port 35432`);
-    console.log(`⚡ App Vault location: ${vaultManager.vaultDir}`);
-    console.log(`=======================================================`);
+// Start Server (only when not running in Vercel Serverless environment)
+if (!process.env.VERCEL) {
+    server.listen(PORT, '0.0.0.0', () => {
+        const ip = getPrimaryIp();
+        console.log(`=======================================================`);
+        console.log(`⚡ HyperDrop Server running at: http://${ip}:${PORT}`);
+        console.log(`⚡ Local Access: http://localhost:${PORT}`);
+        console.log(`⚡ UDP Peer Discovery Engine running on port 35432`);
+        console.log(`⚡ App Vault location: ${vaultManager.vaultDir}`);
+        console.log(`=======================================================`);
 
-    // Start UDP discovery beacon
-    discoveryEngine.start();
-});
+        // Start UDP discovery beacon
+        discoveryEngine.start();
+    });
+}
 
 process.on('uncaughtException', (err) => {
     console.error('[HyperDrop Error Safe Guard]', err.message);
@@ -215,3 +217,5 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
+
+module.exports = app;
