@@ -141,7 +141,20 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
             const ifaces = getNetworkInterfaces();
             const requestedIp = req.query.ip;
             const primaryIp = requestedIp || getPrimaryIp();
-            const connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+
+            const hostHeader = req.get('host');
+            const isLocalHost = !hostHeader || hostHeader.startsWith('localhost') || hostHeader.startsWith('127.0.0.1') || hostHeader.startsWith('192.168.') || hostHeader.startsWith('10.') || hostHeader.startsWith('172.');
+
+            let connectUrl;
+            if (process.env.RENDER_EXTERNAL_URL) {
+                connectUrl = process.env.RENDER_EXTERNAL_URL;
+            } else if (!isLocalHost && hostHeader) {
+                const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+                connectUrl = `${proto}://${hostHeader}`;
+            } else {
+                connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+            }
+
             const qrDataUrl = await QRCode.toDataURL(connectUrl, {
                 width: 320,
                 margin: 2,
@@ -150,6 +163,7 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
                     light: '#0a0e17'
                 }
             });
+
             res.json({
                 success: true,
                 url: connectUrl,
@@ -177,21 +191,32 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
         res.json(result);
     });
 
-    // Remote Session QR Code Generator (Auto-uses Public HTTPS Tunnel for 4G/5G mobile access)
+    // Remote Session QR Code Generator (Auto-uses Public HTTPS URL on Render/Vercel or Public Tunnel)
     router.get('/remote/qr', async (req, res) => {
         try {
             const { code, useTunnel } = req.query;
             let tunnelStatus = tunnelManager.getStatus();
 
-            // Auto-start tunnel if not already active or explicitly requested
-            if (!tunnelStatus.active && useTunnel !== 'false') {
-                const startRes = await tunnelManager.startTunnel();
-                if (startRes.success) {
-                    tunnelStatus = tunnelManager.getStatus();
+            const hostHeader = req.get('host');
+            const isLocalHost = !hostHeader || hostHeader.startsWith('localhost') || hostHeader.startsWith('127.0.0.1') || hostHeader.startsWith('192.168.') || hostHeader.startsWith('10.') || hostHeader.startsWith('172.');
+
+            let baseUrl;
+            if (process.env.RENDER_EXTERNAL_URL) {
+                baseUrl = process.env.RENDER_EXTERNAL_URL;
+            } else if (!isLocalHost && hostHeader) {
+                const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+                baseUrl = `${proto}://${hostHeader}`;
+            } else {
+                // Local host: auto-start public tunnel if requested
+                if (!tunnelStatus.active && useTunnel !== 'false') {
+                    const startRes = await tunnelManager.startTunnel();
+                    if (startRes.success) {
+                        tunnelStatus = tunnelManager.getStatus();
+                    }
                 }
+                baseUrl = tunnelStatus.active ? tunnelStatus.publicUrl : `http://${getPrimaryIp()}:${discoveryEngine.httpPort}`;
             }
 
-            const baseUrl = tunnelStatus.active ? tunnelStatus.publicUrl : `http://${getPrimaryIp()}:${discoveryEngine.httpPort}`;
             const joinUrl = `${baseUrl}/?remote_join=${encodeURIComponent(code || '')}`;
             
             const qrDataUrl = await QRCode.toDataURL(joinUrl, {
@@ -207,8 +232,8 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
                 success: true,
                 joinUrl,
                 qrCode: qrDataUrl,
-                isPublicTunnel: tunnelStatus.active,
-                publicUrl: tunnelStatus.publicUrl
+                isPublicTunnel: !isLocalHost || tunnelStatus.active,
+                publicUrl: baseUrl
             });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });

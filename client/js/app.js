@@ -1597,19 +1597,31 @@ class HyperDropApp {
             if (data.success) {
                 const qrImg = document.getElementById('qr-image');
                 const qrUrl = document.getElementById('qr-url-text');
+                
+                // If on public HTTPS cloud domain (Render/Vercel), ensure exact window origin is used
+                const displayUrl = (window.location.protocol === 'https:' && !data.url.startsWith('https:'))
+                    ? window.location.origin
+                    : data.url;
+
                 if (qrImg) qrImg.src = data.qrCode;
-                if (qrUrl) qrUrl.textContent = data.url;
+                if (qrUrl) qrUrl.textContent = displayUrl;
 
                 const container = document.getElementById('qr-network-selector');
-                if (container && data.interfaces) {
-                    if (data.interfaces.length > 1) {
+                if (container) {
+                    if (window.location.protocol === 'https:') {
+                        container.innerHTML = `
+                            <div style="font-size:11px; color:var(--neon-green); font-weight:700; text-align:center; margin-bottom:8px;">
+                                <i class="fa-solid fa-cloud"></i> Live Cloud Server (Global 4G/5G/Wi-Fi Access)
+                            </div>
+                        `;
+                    } else if (data.interfaces && data.interfaces.length > 1) {
                         container.innerHTML = `
                             <div style="display:flex; align-items:center; gap:8px; justify-content:center; margin-bottom:8px;">
                                 <span style="font-size:11px; color:var(--text-dim); font-weight:600;">Active Network:</span>
                                 <select id="qr-dynamic-ip-select" style="background:#040912; border:1px solid rgba(0,242,254,0.3); color:var(--neon-cyan); padding:4px 10px; border-radius:8px; font-size:11px; font-weight:700; outline:none; cursor:pointer;">
                                     ${data.interfaces.map(iface => `
                                         <option value="${iface.address}" ${iface.address === data.selectedIp ? 'selected' : ''}>
-                                            ${iface.modeLabel || iface.name}: ${iface.address}
+                                             ${iface.modeLabel || iface.name}: ${iface.address}
                                         </option>
                                     `).join('')}
                                 </select>
