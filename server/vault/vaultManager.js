@@ -156,6 +156,8 @@ class VaultManager extends EventEmitter {
     async _finalizeFile(fileId) {
         const upload = this.activeUploads.get(fileId);
         if (!upload || upload.isCancelled) return { status: 'cancelled' };
+        if (upload.isFinalizing) return { status: 'finalizing' };
+        upload.isFinalizing = true;
 
         // Close file descriptor cleanly
         try {

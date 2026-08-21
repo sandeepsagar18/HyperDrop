@@ -1048,53 +1048,73 @@ class HyperDropApp {
             let lastCheckTime = Date.now();
             let lastCheckBytes = 0;
 
-            for (let i = 0; i < totalChunks; i++) {
-                if (workerData.status === 'cancelled') {
-                    console.log(`[TRANSFER] Transfer cancelled for ${fileName}`);
-                    return;
+            // Parallel Concurrent Worker Pool (Concurrency = 4 parallel streams)
+            const CONCURRENCY = Math.min(4, totalChunks);
+            let nextIndex = 0;
+            let activeError = null;
+
+            const processWorker = async () => {
+                while (nextIndex < totalChunks && !activeError) {
+                    if (workerData.status === 'cancelled') return;
+
+                    const i = nextIndex++;
+                    const startByte = i * CHUNK_SIZE;
+                    const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
+                    const chunkBlob = file.slice(startByte, endByte);
+
+                    try {
+                        await transport.sendChunk(chunkBlob, {
+                            fileId: workerId,
+                            fileName: fileName,
+                            fileSize: file.size,
+                            chunkIndex: i,
+                            totalChunks,
+                            startByte,
+                            senderId: this.clientId,
+                            senderName: this.clientName
+                        });
+
+                        const chunkBytes = (endByte - startByte);
+                        workerData.bytesTransferred += chunkBytes;
+                        this.totalBytesMoved += chunkBytes;
+
+                        workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
+
+                        const now = Date.now();
+                        const deltaMs = now - lastCheckTime;
+                        if (deltaMs >= 150 || workerData.bytesTransferred >= file.size) {
+                            const deltaBytes = workerData.bytesTransferred - lastCheckBytes;
+                            const speedBps = (deltaBytes / (deltaMs / 1000));
+                            const speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                            const speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
+                            
+                            workerData.speedMBs = speedMBs;
+                            workerData.speedMbps = speedMbps;
+                            if (speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = speedMBs;
+
+                            const remainingBytes = file.size - workerData.bytesTransferred;
+                            workerData.etaSeconds = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
+
+                            lastCheckTime = now;
+                            lastCheckBytes = workerData.bytesTransferred;
+                            this.renderTransferEngine();
+                        }
+                    } catch (err) {
+                        activeError = err;
+                        throw err;
+                    }
                 }
+            };
 
-                const startByte = i * CHUNK_SIZE;
-                const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
-                const chunkBlob = file.slice(startByte, endByte);
-
-                await transport.sendChunk(chunkBlob, {
-                    fileId: workerId,
-                    fileName: fileName,
-                    fileSize: file.size,
-                    chunkIndex: i,
-                    totalChunks,
-                    startByte,
-                    senderId: this.clientId,
-                    senderName: this.clientName
-                });
-
-                const chunkBytes = (endByte - startByte);
-                workerData.bytesTransferred += chunkBytes;
-                this.totalBytesMoved += chunkBytes;
-
-                workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
-
-                const now = Date.now();
-                const deltaMs = now - lastCheckTime;
-                if (deltaMs >= 150 || i === totalChunks - 1) {
-                    const deltaBytes = workerData.bytesTransferred - lastCheckBytes;
-                    const speedBps = (deltaBytes / (deltaMs / 1000));
-                    const speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                    const speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
-                    
-                    workerData.speedMBs = speedMBs;
-                    workerData.speedMbps = speedMbps;
-                    if (speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = speedMBs;
-
-                    const remainingBytes = file.size - workerData.bytesTransferred;
-                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
-
-                    lastCheckTime = now;
-                    lastCheckBytes = workerData.bytesTransferred;
-                    this.renderTransferEngine();
-                }
+            // Run 4 concurrent workers in parallel
+            const workerPromises = [];
+            for (let w = 0; w < CONCURRENCY; w++) {
+                workerPromises.push(processWorker());
             }
+
+            await Promise.all(workerPromises);
+
+            if (activeError) throw activeError;
 
             const totalDuration = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
             workerData.status = 'completed';
@@ -1104,10 +1124,10 @@ class HyperDropApp {
             workerData.avgSpeedMBs = (file.size / (1024 * 1024) / totalDuration).toFixed(1);
             workerData.avgSpeedMbps = ((file.size * 8) / totalDuration / 1000000).toFixed(1);
             this.renderTransferEngine();
-            console.log(`[TRANSFER] Completed "${fileName}" to ${peer.name} (${workerData.avgSpeedMBs} MB/s | ${workerData.avgSpeedMbps} Mbps)`);
+            console.log(`[TRANSFER] Completed "${fileName}" to ${peer.name} (${workerData.avgSpeedMBs} MB/s | ${workerData.avgSpeedMbps} Mbps in ${workerData.durationSec}s)`);
             this.fetchVaultItems();
             this.fetchVaultStats();
-            this.showToast(`✓ Sent ${file.name} to ${peer.name} (${workerData.avgSpeedMBs} MB/s)`);
+            this.showToast(`✓ Sent ${file.name} to ${peer.name} in ${workerData.durationSec}s (${workerData.avgSpeedMBs} MB/s)`);
 
         } catch (err) {
             console.error(`[TRANSFER] Failed streaming to ${peer.name}:`, err);
