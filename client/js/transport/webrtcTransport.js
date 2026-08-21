@@ -141,8 +141,8 @@ class WebRTCTransport extends TransferTransport {
                 remoteCandidate = stats.get(selectedPair.remoteCandidateId);
             }
 
-            const localType = localCandidate ? localCandidate.candidateType : 'unknown';
-            const remoteType = remoteCandidate ? remoteCandidate.candidateType : 'unknown';
+            const localType = localCandidate ? (localCandidate.candidateType || localCandidate.type || 'unknown') : 'unknown';
+            const remoteType = remoteCandidate ? (remoteCandidate.candidateType || remoteCandidate.type || 'unknown') : 'unknown';
             const protocol = selectedPair ? (selectedPair.protocol || 'udp') : 'udp';
             const rtt = selectedPair && selectedPair.currentRoundTripTime ? Math.round(selectedPair.currentRoundTripTime * 1000) : 0;
             const availableOutgoingBitrate = selectedPair ? selectedPair.availableOutgoingBitrate : null;
@@ -158,21 +158,40 @@ class WebRTCTransport extends TransferTransport {
                 classification = 'Remote P2P Connect';
             }
 
+            const localAddr = localCandidate ? `${localCandidate.address || localCandidate.ip || 'local'}:${localCandidate.port || ''}` : 'unknown';
+            const remoteAddr = remoteCandidate ? `${remoteCandidate.address || remoteCandidate.ip || 'remote'}:${remoteCandidate.port || ''}` : 'unknown';
+
             this.connectionClassification = classification;
             this.connectionStats = {
                 classification,
+                connectionState: this.peerConnection.connectionState,
+                iceConnectionState: this.peerConnection.iceConnectionState,
+                iceGatheringState: this.peerConnection.iceGatheringState,
                 localCandidateType: localType,
                 remoteCandidateType: remoteType,
-                candidatePair: `${localType} (${localCandidate ? (localCandidate.address || localCandidate.ip) : '?'}) ↔ ${remoteType} (${remoteCandidate ? (remoteCandidate.address || remoteCandidate.ip) : '?'})`,
+                candidatePair: `${localType} (${localAddr}) ↔ ${remoteType} (${remoteAddr})`,
                 protocol,
                 currentRoundTripTime: rtt,
-                availableOutgoingBitrate,
-                availableIncomingBitrate,
+                availableOutgoingBitrate: availableOutgoingBitrate ? `${(availableOutgoingBitrate / 1000000).toFixed(2)} Mbps` : 'N/A',
+                availableIncomingBitrate: availableIncomingBitrate ? `${(availableIncomingBitrate / 1000000).toFixed(2)} Mbps` : 'N/A',
                 isDirectLan: localType === 'host' && remoteType === 'host',
                 isRelay: localType === 'relay' || remoteType === 'relay'
             };
 
-            console.log(`[WEBRTC STATS] Classification: ${classification} | Local: ${localType} | Remote: ${remoteType} | RTT: ${rtt}ms | OutgoingBitrate: ${availableOutgoingBitrate || 'N/A'}`);
+            console.log('================ [WEBRTC DIAGNOSTICS] ================');
+            console.log(`* connectionState:           ${this.peerConnection.connectionState}`);
+            console.log(`* iceConnectionState:        ${this.peerConnection.iceConnectionState}`);
+            console.log(`* iceGatheringState:         ${this.peerConnection.iceGatheringState}`);
+            console.log(`* selected ICE candidate pair: ${this.connectionStats.candidatePair}`);
+            console.log(`* local candidate type:      ${localType}`);
+            console.log(`* remote candidate type:     ${remoteType}`);
+            console.log(`* protocol:                  ${protocol}`);
+            console.log(`* currentRoundTripTime:      ${rtt} ms`);
+            console.log(`* availableOutgoingBitrate:  ${this.connectionStats.availableOutgoingBitrate}`);
+            console.log(`* availableIncomingBitrate:  ${this.connectionStats.availableIncomingBitrate}`);
+            console.log(`* Classification:            ${classification}`);
+            console.log('======================================================');
+
         } catch (e) {
             console.error('[WEBRTC] Error querying getStats:', e);
         }

@@ -161,6 +161,12 @@ class HyperDropApp {
                 }
                 break;
 
+            case 'webrtc_offer':
+            case 'webrtc_answer':
+            case 'webrtc_ice_candidate':
+                this.connectionManager.handleRemoteSignalingMessage(type, data);
+                break;
+
             case 'network_changed':
                 console.log('[NETWORK] Live network change detected:', data);
                 if (this.systemStatus) {
@@ -1011,12 +1017,10 @@ class HyperDropApp {
         const workerId = `w_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const fileName = file.webkitRelativePath || file.relativePath || file.name;
         
-        // High-Speed Local Wi-Fi / Hotspot Transport (4MB Chunks)
+        // 1. Get Direct WebRTC P2P Transport (0 Cloud File Relay)
         const transport = await this.connectionManager.getTransportForPeer(peer);
-        const CHUNK_SIZE = transport.chunkSize || (4 * 1024 * 1024);
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
 
-        console.log(`[TRANSFER] Starting Direct Local Wi-Fi/Hotspot Streaming for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
+        console.log(`[TRANSFER] Initiating Direct WebRTC DataChannel transfer for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
 
         const workerData = {
             id: workerId,
@@ -1029,7 +1033,7 @@ class HyperDropApp {
             speedMBs: 0.0,
             speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: 'Direct Local Wi-Fi',
+            transportMode: transport.connectionClassification || 'Local P2P Connect',
             startTime: Date.now()
         };
 
@@ -1037,74 +1041,46 @@ class HyperDropApp {
         this.renderTransferEngine();
 
         try {
+            // 2. Connect transport (DataChannel / ICE negotiation)
             await transport.connect({ clientId: this.clientId, clientName: this.clientName });
+            const connStats = await transport.detectConnectionMode();
+            workerData.transportMode = connStats.classification || 'Local P2P Connect';
+            this.renderTransferEngine();
 
-            let lastCheckTime = Date.now();
-            let lastCheckBytes = 0;
+            // 3. High-throughput pipelined stream directly over RTCDataChannel.send()
+            await transport.streamFile(file, {
+                fileId: workerId,
+                fileName: fileName,
+                isCancelled: () => workerData.status === 'cancelled'
+            }, (progress) => {
+                workerData.bytesTransferred = progress.bytesTransferred;
+                workerData.percent = progress.percent;
+                workerData.speedMBs = progress.speedMBs;
+                workerData.speedMbps = progress.speedMbps;
+                workerData.etaSeconds = progress.etaSeconds;
+                if (progress.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = progress.speedMBs;
+                this.renderTransferEngine();
+            });
 
-            for (let i = 0; i < totalChunks; i++) {
-                if (workerData.status === 'cancelled') {
-                    console.log(`[TRANSFER] Transfer cancelled for ${fileName}`);
-                    return;
-                }
+            if (workerData.status !== 'cancelled') {
+                const totalElapsedSec = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
+                const avgMBs = (file.size / (1024 * 1024) / totalElapsedSec).toFixed(1);
+                const avgMbps = ((file.size * 8) / totalElapsedSec / 1000000).toFixed(1);
 
-                const startByte = i * CHUNK_SIZE;
-                const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
-                const chunkBlob = file.slice(startByte, endByte);
-
-                await transport.sendChunk(chunkBlob, {
-                    fileId: workerId,
-                    fileName: fileName,
-                    fileSize: file.size,
-                    chunkIndex: i,
-                    totalChunks,
-                    startByte,
-                    senderId: this.clientId,
-                    senderName: this.clientName
-                });
-
-                const chunkBytes = (endByte - startByte);
-                workerData.bytesTransferred += chunkBytes;
-                this.totalBytesMoved += chunkBytes;
-
-                workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
-
-                const now = Date.now();
-                const deltaMs = now - lastCheckTime;
-                if (deltaMs >= 200 || i === totalChunks - 1) {
-                    const deltaBytes = workerData.bytesTransferred - lastCheckBytes;
-                    const speedBps = (deltaBytes / (deltaMs / 1000));
-                    const speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                    const speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
-                    
-                    workerData.speedMBs = speedMBs;
-                    workerData.speedMbps = speedMbps;
-                    if (speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = speedMBs;
-
-                    const remainingBytes = file.size - workerData.bytesTransferred;
-                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
-
-                    lastCheckTime = now;
-                    lastCheckBytes = workerData.bytesTransferred;
-                    this.renderTransferEngine();
-                }
+                workerData.status = 'completed';
+                workerData.percent = 100;
+                workerData.speedMBs = 0.0;
+                workerData.durationSec = totalElapsedSec.toFixed(1);
+                workerData.avgSpeedMBs = avgMBs;
+                workerData.avgSpeedMbps = avgMbps;
+                this.totalBytesMoved += file.size;
+                this.renderTransferEngine();
+                console.log(`[TRANSFER] Direct P2P transfer successfully finished for ${file.name} to ${peer.name} (${avgMBs} MB/s | ${avgMbps} Mbps)`);
+                this.showToast(`✓ Sent ${file.name} to ${peer.name} (${avgMbps} Mbps)`);
             }
 
-            const totalDuration = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
-            workerData.status = 'completed';
-            workerData.percent = 100;
-            workerData.speedMBs = 0.0;
-            workerData.durationSec = totalDuration.toFixed(1);
-            workerData.avgSpeedMBs = (file.size / (1024 * 1024) / totalDuration).toFixed(1);
-            workerData.avgSpeedMbps = ((file.size * 8) / totalDuration / 1000000).toFixed(1);
-            this.renderTransferEngine();
-            console.log(`[TRANSFER] Completed "${fileName}" to ${peer.name} (${workerData.avgSpeedMBs} MB/s | ${workerData.avgSpeedMbps} Mbps)`);
-            this.fetchVaultItems();
-            this.fetchVaultStats();
-            this.showToast(`✓ Sent ${file.name} to ${peer.name} (${workerData.avgSpeedMBs} MB/s)`);
-
         } catch (err) {
-            console.error(`[TRANSFER] Failed streaming to ${peer.name}:`, err);
+            console.error(`[TRANSFER] Failed direct streaming to ${peer.name}:`, err);
             workerData.status = 'failed';
             workerData.errorMessage = err.message;
             this.renderTransferEngine();
