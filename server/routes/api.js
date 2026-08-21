@@ -142,7 +142,19 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
             const requestedIp = req.query.ip;
             const pairCode = req.query.code || req.query.pair || req.query.sessionId;
             const primaryIp = requestedIp || getPrimaryIp();
-            let connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+            
+            const hostHeader = req.get('host');
+            const isLocal = !hostHeader || hostHeader.startsWith('localhost') || hostHeader.startsWith('127.0.0.1') || hostHeader.startsWith('192.168.') || hostHeader.startsWith('10.') || hostHeader.startsWith('172.');
+
+            let connectUrl;
+            if (process.env.RENDER_EXTERNAL_URL) {
+                connectUrl = process.env.RENDER_EXTERNAL_URL;
+            } else if (!isLocal && hostHeader) {
+                const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+                connectUrl = `${proto}://${hostHeader}`;
+            } else {
+                connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+            }
 
             const qrDataUrl = await QRCode.toDataURL(connectUrl, {
                 width: 320,
