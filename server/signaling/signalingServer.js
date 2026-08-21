@@ -4,8 +4,27 @@ const { getIceConfiguration } = require('../network/iceConfig');
 /**
  * Handles WebRTC signaling messages over WebSocket
  */
-function handleSignalingMessage(ws, msg) {
+function handleSignalingMessage(ws, msg, wss = null) {
     const { type, data } = msg;
+    if (!data) return;
+
+    // Helper to find target socket by peerId or session
+    const getTargetSocket = (sessionId, targetPeerId) => {
+        if (targetPeerId && wss) {
+            for (const client of wss.clients) {
+                if (client.readyState === 1 && client.peerId === targetPeerId) {
+                    return client;
+                }
+            }
+        }
+        if (sessionId) {
+            const session = sessionManager.getSession(sessionId);
+            if (session) {
+                return ws === session.host.ws ? (session.guest ? session.guest.ws : null) : session.host.ws;
+            }
+        }
+        return null;
+    };
 
     switch (type) {
         case 'create_remote_session': {
@@ -93,18 +112,18 @@ function handleSignalingMessage(ws, msg) {
         }
 
         case 'webrtc_offer': {
-            const session = sessionManager.getSession(data.sessionId);
-            if (!session) return;
-
-            const targetWs = ws === session.host.ws ? (session.guest ? session.guest.ws : null) : session.host.ws;
+            const targetWs = getTargetSocket(data.sessionId, data.targetPeerId);
             if (targetWs && targetWs.readyState === 1) {
-                console.log(`[WEBRTC] Relaying SDP Offer for session ${data.sessionId}`);
+                console.log(`[WEBRTC] Relaying SDP Offer from ${data.senderId || 'peer'} to target`);
                 targetWs.send(JSON.stringify({
                     type: 'webrtc_offer',
                     data: {
                         sessionId: data.sessionId,
+                        senderId: data.senderId,
+                        senderName: data.senderName,
+                        targetPeerId: data.targetPeerId,
                         sdp: data.sdp,
-                        senderId: data.senderId
+                        iceConfig: getIceConfiguration()
                     }
                 }));
             }
@@ -112,18 +131,17 @@ function handleSignalingMessage(ws, msg) {
         }
 
         case 'webrtc_answer': {
-            const session = sessionManager.getSession(data.sessionId);
-            if (!session) return;
-
-            const targetWs = ws === session.host.ws ? (session.guest ? session.guest.ws : null) : session.host.ws;
+            const targetWs = getTargetSocket(data.sessionId, data.targetPeerId);
             if (targetWs && targetWs.readyState === 1) {
-                console.log(`[WEBRTC] Relaying SDP Answer for session ${data.sessionId}`);
+                console.log(`[WEBRTC] Relaying SDP Answer from ${data.senderId || 'peer'} to target`);
                 targetWs.send(JSON.stringify({
                     type: 'webrtc_answer',
                     data: {
                         sessionId: data.sessionId,
-                        sdp: data.sdp,
-                        senderId: data.senderId
+                        senderId: data.senderId,
+                        senderName: data.senderName,
+                        targetPeerId: data.targetPeerId,
+                        sdp: data.sdp
                     }
                 }));
             }
@@ -131,15 +149,14 @@ function handleSignalingMessage(ws, msg) {
         }
 
         case 'webrtc_ice_candidate': {
-            const session = sessionManager.getSession(data.sessionId);
-            if (!session) return;
-
-            const targetWs = ws === session.host.ws ? (session.guest ? session.guest.ws : null) : session.host.ws;
+            const targetWs = getTargetSocket(data.sessionId, data.targetPeerId);
             if (targetWs && targetWs.readyState === 1) {
                 targetWs.send(JSON.stringify({
                     type: 'webrtc_ice_candidate',
                     data: {
                         sessionId: data.sessionId,
+                        senderId: data.senderId,
+                        targetPeerId: data.targetPeerId,
                         candidate: data.candidate
                     }
                 }));
@@ -148,10 +165,7 @@ function handleSignalingMessage(ws, msg) {
         }
 
         case 'remote_transfer_request': {
-            const session = sessionManager.getSession(data.sessionId);
-            if (!session) return;
-
-            const targetWs = ws === session.host.ws ? (session.guest ? session.guest.ws : null) : session.host.ws;
+            const targetWs = getTargetSocket(data.sessionId, data.targetPeerId);
             if (targetWs && targetWs.readyState === 1) {
                 targetWs.send(JSON.stringify({
                     type: 'remote_transfer_request',
@@ -162,10 +176,7 @@ function handleSignalingMessage(ws, msg) {
         }
 
         case 'remote_transfer_response': {
-            const session = sessionManager.getSession(data.sessionId);
-            if (!session) return;
-
-            const targetWs = ws === session.host.ws ? (session.guest ? session.guest.ws : null) : session.host.ws;
+            const targetWs = getTargetSocket(data.sessionId, data.targetPeerId);
             if (targetWs && targetWs.readyState === 1) {
                 targetWs.send(JSON.stringify({
                     type: 'remote_transfer_response',

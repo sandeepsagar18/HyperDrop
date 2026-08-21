@@ -180,8 +180,42 @@ async function runTests() {
     ice.iceServers.forEach((s, idx) => console.log(`   - Server #${idx + 1}: ${JSON.stringify(s.urls)}`));
     if (ice.iceServers.length === 0) throw new Error('No ICE servers configured');
 
+    // TEST 8: WebRTC Direct Peer ID Signaling Dispatch
+    console.log('\n[Test 8] Testing WebRTC Peer-to-Peer Signaling Message Dispatch...');
+    const { handleSignalingMessage } = require('../server/signaling/signalingServer');
+    
+    let receivedMessage = null;
+    const mockGuestWs = {
+        readyState: 1,
+        peerId: 'peer_target_456',
+        send: (data) => {
+            receivedMessage = JSON.parse(data);
+        }
+    };
+    const mockSenderWs = {
+        readyState: 1,
+        peerId: 'peer_sender_123'
+    };
+    const mockWss = {
+        clients: new Set([mockGuestWs, mockSenderWs])
+    };
+
+    handleSignalingMessage(mockSenderWs, {
+        type: 'webrtc_offer',
+        data: {
+            targetPeerId: 'peer_target_456',
+            senderId: 'peer_sender_123',
+            sdp: { type: 'offer', sdp: 'v=0\r\no=- 12345 2 IN IP4 127.0.0.1' }
+        }
+    }, mockWss);
+
+    if (!receivedMessage || receivedMessage.type !== 'webrtc_offer' || receivedMessage.data.senderId !== 'peer_sender_123') {
+        throw new Error('Signaling message was not routed to the target peer socket');
+    }
+    console.log('✓ Direct WebRTC SDP Offer successfully routed to target peer socket without server file relay');
+
     console.log('\n=======================================================');
-    console.log('🎉 ALL HYPERDROP TEST SUITES PASSED SUCCESSFULLY (7/7)');
+    console.log('🎉 ALL HYPERDROP TEST SUITES PASSED SUCCESSFULLY (8/8)');
     console.log('=======================================================');
 }
 

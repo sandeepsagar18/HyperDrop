@@ -9,9 +9,13 @@
 class ConnectionManager {
     constructor(app) {
         this.app = app;
-        this.transports = new Map(); // peerId -> TransferTransport instance
+        this.transports = new Map(); // peerId -> WebRTCTransport
         this.remoteSessions = new Map(); // sessionId -> WebRTCTransport
-        this.iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        this.iceConfig = {
+            iceServers: [
+                { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] }
+            ]
+        };
         this.initIceConfig();
     }
 
@@ -26,40 +30,73 @@ class ConnectionManager {
     }
 
     /**
-     * Determines best available transport for target peer
+     * Determines and retrieves the direct WebRTC P2P transport for a target peer
      */
     async getTransportForPeer(peer) {
-        // Return existing active transport if available
+        // Return existing active transport if connected or connecting
         if (this.transports.has(peer.id)) {
             const t = this.transports.get(peer.id);
-            if (t.status === 'connected') return t;
+            if (t.status === 'connected' || t.status === 'connecting') return t;
         }
 
-        // 1. Is Remote Peer?
-        if (peer.isRemote || peer.sessionId) {
-            console.log(`[CONNECTION] Selected Remote WebRTC Transport for ${peer.name}`);
-            const transport = new WebRTCTransport(peer, this.app.ws, {
-                isHost: peer.isHost !== false,
-                iceConfig: this.iceConfig
-            });
-            this.transports.set(peer.id, transport);
-            if (peer.sessionId) {
-                this.remoteSessions.set(peer.sessionId, transport);
-            }
-            return transport;
+        if (peer.sessionId && this.remoteSessions.has(peer.sessionId)) {
+            const t = this.remoteSessions.get(peer.sessionId);
+            if (t.status === 'connected' || t.status === 'connecting') return t;
         }
 
-        // 2. Default: Local Transport (LAN / Hotspot)
-        console.log(`[CONNECTION] Selected Local HTTP Streaming Transport for ${peer.name}`);
-        const transport = new LocalTransport(peer);
+        console.log(`[CONNECTION] Initializing Direct WebRTC Transport for ${peer.name} (${peer.id})`);
+        const transport = new WebRTCTransport(peer, this.app.ws, {
+            clientId: this.app.clientId,
+            clientName: this.app.clientName,
+            isHost: peer.isHost !== false,
+            iceConfig: this.iceConfig
+        });
+
         this.transports.set(peer.id, transport);
+        if (peer.sessionId) {
+            this.remoteSessions.set(peer.sessionId, transport);
+        }
+        return transport;
+    }
+
+    _findOrCreateTransport(data) {
+        if (data.sessionId && this.remoteSessions.has(data.sessionId)) {
+            return this.remoteSessions.get(data.sessionId);
+        }
+        if (data.senderId && this.transports.has(data.senderId)) {
+            return this.transports.get(data.senderId);
+        }
+        if (data.targetPeerId && this.transports.has(data.targetPeerId)) {
+            return this.transports.get(data.targetPeerId);
+        }
+
+        // Create receiver transport if incoming offer from an existing peer
+        const senderPeer = this.app.peers.get(data.senderId) || {
+            id: data.senderId,
+            name: data.senderName || 'Peer',
+            sessionId: data.sessionId,
+            isRemote: true,
+            isHost: false
+        };
+
+        const transport = new WebRTCTransport(senderPeer, this.app.ws, {
+            clientId: this.app.clientId,
+            clientName: this.app.clientName,
+            isHost: false,
+            iceConfig: data.iceConfig || this.iceConfig
+        });
+
+        if (senderPeer.id) this.transports.set(senderPeer.id, transport);
+        if (data.sessionId) this.remoteSessions.set(data.sessionId, transport);
         return transport;
     }
 
     handleRemoteSignalingMessage(type, data) {
+        if (!data) return;
+
         switch (type) {
             case 'webrtc_offer': {
-                const transport = this.remoteSessions.get(data.sessionId);
+                const transport = this._findOrCreateTransport(data);
                 if (transport) {
                     transport.handleRemoteOffer(data.sdp);
                 }
@@ -67,7 +104,7 @@ class ConnectionManager {
             }
 
             case 'webrtc_answer': {
-                const transport = this.remoteSessions.get(data.sessionId);
+                const transport = this._findOrCreateTransport(data);
                 if (transport) {
                     transport.handleRemoteAnswer(data.sdp);
                 }
@@ -75,7 +112,7 @@ class ConnectionManager {
             }
 
             case 'webrtc_ice_candidate': {
-                const transport = this.remoteSessions.get(data.sessionId);
+                const transport = this._findOrCreateTransport(data);
                 if (transport) {
                     transport.handleRemoteIceCandidate(data.candidate);
                 }
@@ -90,9 +127,9 @@ class ConnectionManager {
 
             case 'remote_transfer_response': {
                 if (data.accepted) {
-                    this.app.showToast(`✓ ${data.receiverName || 'Remote Peer'} accepted transfer!`);
+                    this.app.showToast(`✓ ${data.receiverName || 'Peer'} accepted transfer!`);
                 } else {
-                    this.app.showToast(`❌ ${data.receiverName || 'Remote Peer'} rejected transfer.`);
+                    this.app.showToast(`❌ ${data.receiverName || 'Peer'} rejected transfer.`);
                 }
                 break;
             }

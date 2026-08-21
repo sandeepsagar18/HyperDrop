@@ -1,0 +1,8 @@
+node_modules
+.hyperdrop_vault
+.hyperdrop_test_storage
+temp_uploads
+.git
+.env
+*.bat
+test/

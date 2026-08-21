@@ -135,11 +135,12 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
         res.json({ success: true, peer });
     });
 
-    // 3. QR Code generator for Hotspot/Wi-Fi mobile pairing
+    // 3. QR Code generator for Hotspot/Wi-Fi mobile pairing & instant WebRTC pairing
     router.get('/qr', async (req, res) => {
         try {
             const ifaces = getNetworkInterfaces();
             const requestedIp = req.query.ip;
+            const pairCode = req.query.code || req.query.pair || req.query.sessionId;
             const primaryIp = requestedIp || getPrimaryIp();
 
             const hostHeader = req.get('host');
@@ -153,6 +154,11 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
                 connectUrl = `${proto}://${hostHeader}`;
             } else {
                 connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+            }
+
+            if (pairCode) {
+                const joinParam = pairCode.startsWith('HD-') ? `remote_join=${encodeURIComponent(pairCode)}` : `pair=${encodeURIComponent(pairCode)}`;
+                connectUrl = `${connectUrl}/?${joinParam}`;
             }
 
             const qrDataUrl = await QRCode.toDataURL(connectUrl, {

@@ -144,7 +144,7 @@ wss.on('connection', (ws, req) => {
             const parsed = JSON.parse(message.toString());
 
             // 1. WebRTC Signaling Dispatch
-            handleSignalingMessage(ws, parsed);
+            handleSignalingMessage(ws, parsed, wss);
 
             // 2. Local Discovery & Heartbeat
             if (parsed.type === 'register_web_peer') {
