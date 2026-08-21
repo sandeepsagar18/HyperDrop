@@ -224,7 +224,7 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
     });
 
     // 5. App Vault Ingest (Receiving Chunks via Worker stream)
-    router.post('/vault/upload-chunk', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res) => {
+    router.post('/vault/upload-chunk', express.raw({ type: '*/*', limit: '200mb' }), async (req, res) => {
         try {
             const fileId = req.headers['x-file-id'] || req.query.fileId;
             const fileName = decodeURIComponent(req.headers['x-file-name'] || req.query.fileName || 'file');

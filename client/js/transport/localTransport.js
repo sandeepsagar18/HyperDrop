@@ -62,7 +62,7 @@ class LocalTransport extends TransferTransport {
     async sendChunk(chunkBlob, chunkMeta) {
         const { fileId, fileName, fileSize, chunkIndex, totalChunks, startByte, senderId, senderName } = chunkMeta;
 
-        const uploadUrl = `/api/vault/upload-chunk?fileId=${fileId}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id)}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
+        const uploadUrl = `/api/vault/upload-chunk?fileId=${encodeURIComponent(fileId)}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id)}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
 
         let chunkUploaded = false;
         let retryCount = 0;
@@ -75,11 +75,11 @@ class LocalTransport extends TransferTransport {
                     headers: {
                         'Content-Type': 'application/octet-stream',
                         'X-File-Id': fileId,
-                        'X-Chunk-Index': chunkIndex,
-                        'X-Total-Chunks': totalChunks,
-                        'X-Chunk-Start': startByte,
+                        'X-Chunk-Index': String(chunkIndex),
+                        'X-Total-Chunks': String(totalChunks),
+                        'X-Chunk-Start': String(startByte),
                         'X-File-Name': encodeURIComponent(fileName),
-                        'X-File-Size': fileSize,
+                        'X-File-Size': String(fileSize),
                         'X-Sender-Id': senderId,
                         'X-Sender-Name': encodeURIComponent(senderName),
                         'X-Target-Peer-Id': this.peer.id,
@@ -89,7 +89,10 @@ class LocalTransport extends TransferTransport {
                     body: chunkBlob
                 });
 
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`HTTP ${res.status}: ${errText}`);
+                }
                 chunkUploaded = true;
                 return { success: true };
             } catch (err) {
@@ -98,7 +101,7 @@ class LocalTransport extends TransferTransport {
                 if (retryCount >= maxRetries) {
                     throw err;
                 }
-                await new Promise(r => setTimeout(r, 400 * retryCount));
+                await new Promise(r => setTimeout(r, 250 * retryCount));
             }
         }
     }

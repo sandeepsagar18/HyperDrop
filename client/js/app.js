@@ -1140,8 +1140,9 @@ class HyperDropApp {
         } catch (err) {
             console.error(`[TRANSFER] Failed streaming to ${peer.name}:`, err);
             workerData.status = 'failed';
-            workerData.errorMessage = err.message;
+            workerData.errorMessage = err.message || 'Transfer failed';
             this.renderTransferEngine();
+            this.showToast(`❌ Transfer failed: ${err.message || 'Error sending file'}`);
         }
     }
 
