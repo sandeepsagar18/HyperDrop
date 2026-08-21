@@ -41,15 +41,6 @@ class HyperDropApp {
         this.fetchClipboardHistory();
         this.loadQrCode();
 
-        // Check for ?pair=... or ?remote_join=... URL parameter for 1-click pairing
-        const urlParams = new URLSearchParams(window.location.search);
-        const autoJoinCode = urlParams.get('pair') || urlParams.get('remote_join') || urlParams.get('code');
-        if (autoJoinCode) {
-            setTimeout(() => {
-                this.joinRemoteSession(autoJoinCode);
-            }, 600);
-        }
-
         // Continuous Radar Background Sweep
         setInterval(() => this.fetchPeers(), 2500);
     }
@@ -79,8 +70,6 @@ class HyperDropApp {
 
         this.ws.onopen = () => {
             this.registerDeviceOnRadar();
-            // Automatically initialize WebRTC Host Session for instant QR pairing
-            this.createRemoteSession();
             setInterval(() => {
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                     this.ws.send(JSON.stringify({ type: 'heartbeat', id: this.clientId }));
@@ -101,47 +90,42 @@ class HyperDropApp {
     }
 
     registerDeviceOnRadar() {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-        this.ws.send(JSON.stringify({
-            type: 'register_web_peer',
-            id: this.clientId,
-            name: this.clientName,
-            deviceType: this.clientType,
-            osType: navigator.platform || 'Device',
-            avatar: this.clientAvatar
-        }));
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'register',
+                id: this.clientId,
+                name: this.clientName,
+                deviceType: this.clientType,
+                avatar: this.clientType === 'phone' ? '📱' : '💻',
+                url: window.location.origin
+            }));
+        }
     }
 
     handleWsMessage(msg) {
         const { type, data } = msg;
 
         switch (type) {
-            case 'init_state':
-                if (data.peers) {
-                    data.peers.forEach(p => {
-                        if (p.id !== this.clientId) {
-                            this.peers.set(p.id, p);
-                            this.selectedPeerIds.add(p.id);
+            case 'peer_list':
+                if (Array.isArray(data)) {
+                    data.forEach(peer => {
+                        if (peer.id !== this.clientId) {
+                            this.peers.set(peer.id, peer);
                         }
                     });
                     this.renderRadarOrbit();
                 }
                 break;
 
-            case 'peer_discovered':
-            case 'peer_updated':
+            case 'peer_joined':
                 if (data.id !== this.clientId) {
-                    const isNew = !this.peers.has(data.id);
                     this.peers.set(data.id, data);
-                    this.selectedPeerIds.add(data.id);
                     this.renderRadarOrbit();
-                    if (isNew) {
-                        this.showToast(`✨ Nearby Device Detected: ${data.name}`);
-                    }
+                    this.showToast(`✨ Discovered nearby device: ${data.name}`);
                 }
                 break;
 
-            case 'peer_lost':
+            case 'peer_left':
                 this.peers.delete(data.id);
                 this.selectedPeerIds.delete(data.id);
                 this.renderRadarOrbit();
@@ -151,94 +135,6 @@ class HyperDropApp {
                 if (data.deviceName) {
                     this.renderRadarOrbit();
                 }
-                break;
-
-            // --- WebRTC Remote Signaling & Pairing ---
-            case 'remote_session_created':
-                this.currentRemoteSession = data;
-                const codeEl = document.getElementById('remote-share-code');
-                if (codeEl) codeEl.textContent = data.shortCode;
-                console.log(`[REMOTE] Session created: ${data.sessionId} | Code: ${data.shortCode}`);
-                
-                // Fetch and render dynamic Remote Pairing QR Code with Public Tunnel
-                fetch(`/api/remote/qr?code=${encodeURIComponent(data.shortCode)}`)
-                    .then(r => r.json())
-                    .then(res => {
-                        if (res.success) {
-                            const qrImg = document.getElementById('remote-qr-image');
-                            if (qrImg) qrImg.src = res.qrCode;
-                            const linkBtn = document.getElementById('copy-remote-link-btn');
-                            if (linkBtn) linkBtn.setAttribute('data-join-url', res.joinUrl);
-                            
-                            const urlText = document.getElementById('remote-tunnel-url-text');
-                            if (urlText) urlText.textContent = res.joinUrl;
-
-                            const badge = document.getElementById('remote-tunnel-badge');
-                            if (badge) {
-                                badge.innerHTML = res.isPublicTunnel 
-                                    ? `<i class="fa-solid fa-circle-check" style="color:var(--neon-green);"></i> Public HTTPS Tunnel (4G/5G Cellular Ready)`
-                                    : `<i class="fa-solid fa-wifi" style="color:var(--neon-cyan);"></i> Local Network IP (Same Wi-Fi)`;
-                            }
-                        }
-                    }).catch(() => {});
-                break;
-
-            case 'remote_session_joined':
-                this.currentRemoteSession = data;
-                if (data.remotePeer) {
-                    const peer = {
-                        id: data.remotePeer.id,
-                        name: data.remotePeer.name,
-                        deviceType: data.remotePeer.deviceType,
-                        sessionId: data.sessionId,
-                        isRemote: true,
-                        isHost: false
-                    };
-                    this.peers.set(peer.id, peer);
-                    this.selectedPeerIds.add(peer.id);
-                    this.renderRadarOrbit();
-                    this.closeModal('remote-modal');
-                    this.showToast(`🌐 Connected to Remote Host: ${peer.name}`);
-                }
-                break;
-
-            case 'remote_peer_paired':
-                if (data.remotePeer) {
-                    const peer = {
-                        id: data.remotePeer.id,
-                        name: data.remotePeer.name,
-                        deviceType: data.remotePeer.deviceType,
-                        sessionId: data.sessionId,
-                        isRemote: true,
-                        isHost: true
-                    };
-                    this.peers.set(peer.id, peer);
-                    this.selectedPeerIds.add(peer.id);
-                    this.renderRadarOrbit();
-                    this.closeModal('remote-modal');
-                    this.showToast(`🌐 Remote Guest Paired: ${peer.name}`);
-                    
-                    // Host initiates WebRTC connection
-                    this.connectionManager.getTransportForPeer(peer).then(transport => {
-                        transport.connect({ clientId: this.clientId, clientName: this.clientName });
-                    });
-                }
-                break;
-
-            case 'remote_session_error':
-                this.showToast(`❌ Remote Error: ${data.error}`);
-                break;
-
-            case 'remote_peer_disconnected':
-                this.showToast(`🔌 Remote peer disconnected`);
-                break;
-
-            case 'webrtc_offer':
-            case 'webrtc_answer':
-            case 'webrtc_ice_candidate':
-            case 'remote_transfer_request':
-            case 'remote_transfer_response':
-                this.connectionManager.handleRemoteSignalingMessage(type, data);
                 break;
 
             case 'network_changed':
@@ -1087,66 +983,16 @@ class HyperDropApp {
         }
     }
 
-    // --- Remote WebRTC Session Management ---
-    openRemoteModal() {
-        this.openModal('remote-modal');
-        this.createRemoteSession();
-    }
-
-    createRemoteSession() {
-        if (!this.ws || this.ws.readyState !== 1) return;
-        const codeEl = document.getElementById('remote-share-code');
-        if (codeEl) codeEl.textContent = 'GENERATING...';
-
-        this.ws.send(JSON.stringify({
-            type: 'create_remote_session',
-            data: {
-                deviceId: this.clientId,
-                deviceName: this.clientName,
-                deviceType: this.clientType
-            }
-        }));
-    }
-
-    joinRemoteSession(code) {
-        if (!this.ws || this.ws.readyState !== 1) {
-            alert('WebSocket connection to HyperDrop server is not active.');
-            return;
-        }
-
-        this.showToast(`Connecting to remote session ${code.toUpperCase()}...`);
-        this.ws.send(JSON.stringify({
-            type: 'join_remote_session',
-            data: {
-                sessionIdOrCode: code.toUpperCase(),
-                deviceId: this.clientId,
-                deviceName: this.clientName,
-                deviceType: this.clientType
-            }
-        }));
-    }
-
-    promptReceiverAuthorization(meta) {
-        this.pendingTransferAuth = meta;
-        const senderNameEl = document.getElementById('auth-sender-name');
-        const fileNameEl = document.getElementById('auth-file-name');
-        const fileSizeEl = document.getElementById('auth-file-size');
-
-        if (senderNameEl) senderNameEl.textContent = meta.senderName || 'Remote Peer';
-        if (fileNameEl) fileNameEl.textContent = meta.fileName;
-        if (fileSizeEl) fileSizeEl.textContent = this.formatBytes(meta.fileSize);
-
-        this.openModal('auth-modal');
-    }
-
     async streamFileToPeer(file, peer) {
         const workerId = `w_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const fileName = file.webkitRelativePath || file.relativePath || file.name;
         
-        // 1. Get Direct WebRTC P2P Transport
+        // High-Speed Local Wi-Fi / Hotspot Transport (4MB Chunks)
         const transport = await this.connectionManager.getTransportForPeer(peer);
+        const CHUNK_SIZE = transport.chunkSize || (4 * 1024 * 1024);
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
 
-        console.log(`[TRANSFER] Initiating Direct WebRTC DataChannel transfer for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
+        console.log(`[TRANSFER] Starting Direct Local Wi-Fi/Hotspot Streaming for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
 
         const workerData = {
             id: workerId,
@@ -1159,7 +1005,7 @@ class HyperDropApp {
             speedMBs: 0.0,
             speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: transport.connectionClassification || 'Direct P2P (WebRTC)',
+            transportMode: 'Direct Local Wi-Fi',
             startTime: Date.now()
         };
 
@@ -1167,63 +1013,74 @@ class HyperDropApp {
         this.renderTransferEngine();
 
         try {
-            // 2. Connect transport (DataChannel / ICE negotiation)
             await transport.connect({ clientId: this.clientId, clientName: this.clientName });
-            const connStats = await transport.detectConnectionMode();
-            workerData.transportMode = connStats.classification || 'Direct P2P (WebRTC)';
+
+            let lastCheckTime = Date.now();
+            let lastCheckBytes = 0;
+
+            for (let i = 0; i < totalChunks; i++) {
+                if (workerData.status === 'cancelled') {
+                    console.log(`[TRANSFER] Transfer cancelled for ${fileName}`);
+                    return;
+                }
+
+                const startByte = i * CHUNK_SIZE;
+                const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
+                const chunkBlob = file.slice(startByte, endByte);
+
+                await transport.sendChunk(chunkBlob, {
+                    fileId: workerId,
+                    fileName: fileName,
+                    fileSize: file.size,
+                    chunkIndex: i,
+                    totalChunks,
+                    startByte,
+                    senderId: this.clientId,
+                    senderName: this.clientName
+                });
+
+                const chunkBytes = (endByte - startByte);
+                workerData.bytesTransferred += chunkBytes;
+                this.totalBytesMoved += chunkBytes;
+
+                workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
+
+                const now = Date.now();
+                const deltaMs = now - lastCheckTime;
+                if (deltaMs >= 200 || i === totalChunks - 1) {
+                    const deltaBytes = workerData.bytesTransferred - lastCheckBytes;
+                    const speedBps = (deltaBytes / (deltaMs / 1000));
+                    const speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                    const speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
+                    
+                    workerData.speedMBs = speedMBs;
+                    workerData.speedMbps = speedMbps;
+                    if (speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = speedMBs;
+
+                    const remainingBytes = file.size - workerData.bytesTransferred;
+                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
+
+                    lastCheckTime = now;
+                    lastCheckBytes = workerData.bytesTransferred;
+                    this.renderTransferEngine();
+                }
+            }
+
+            const totalDuration = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
+            workerData.status = 'completed';
+            workerData.percent = 100;
+            workerData.speedMBs = 0.0;
+            workerData.durationSec = totalDuration.toFixed(1);
+            workerData.avgSpeedMBs = (file.size / (1024 * 1024) / totalDuration).toFixed(1);
+            workerData.avgSpeedMbps = ((file.size * 8) / totalDuration / 1000000).toFixed(1);
             this.renderTransferEngine();
-
-            // 3. Remote Transfer Authorization Request
-            if (this.ws && this.ws.readyState === 1) {
-                this.ws.send(JSON.stringify({
-                    type: 'remote_transfer_request',
-                    data: {
-                        sessionId: peer.sessionId || null,
-                        targetPeerId: peer.id,
-                        fileId: workerId,
-                        fileName: fileName,
-                        fileSize: file.size,
-                        senderName: this.clientName,
-                        totalChunks: Math.ceil(file.size / transport.chunkSize) || 1,
-                        chunkSize: transport.chunkSize
-                    }
-                }));
-            }
-
-            // 4. High-throughput pipelined stream over direct RTCDataChannel.send()
-            await transport.streamFile(file, {
-                fileId: workerId,
-                fileName: fileName,
-                isCancelled: () => workerData.status === 'cancelled'
-            }, (progress) => {
-                workerData.bytesTransferred = progress.bytesTransferred;
-                workerData.percent = progress.percent;
-                workerData.speedMBs = progress.speedMBs;
-                workerData.speedMbps = progress.speedMbps;
-                workerData.etaSeconds = progress.etaSeconds;
-                if (progress.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = progress.speedMBs;
-                this.renderTransferEngine();
-            });
-
-            if (workerData.status !== 'cancelled') {
-                const totalElapsedSec = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
-                const avgMBs = (file.size / (1024 * 1024) / totalElapsedSec).toFixed(1);
-                const avgMbps = ((file.size * 8) / totalElapsedSec / 1000000).toFixed(1);
-
-                workerData.status = 'completed';
-                workerData.percent = 100;
-                workerData.speedMBs = 0.0;
-                workerData.durationSec = totalElapsedSec.toFixed(1);
-                workerData.avgSpeedMBs = avgMBs;
-                workerData.avgSpeedMbps = avgMbps;
-                this.totalBytesMoved += file.size;
-                this.renderTransferEngine();
-                console.log(`[TRANSFER] Direct P2P transfer successfully finished for ${file.name} to ${peer.name} (${avgMBs} MB/s | ${avgMbps} Mbps)`);
-                this.showToast(`✓ Sent ${file.name} to ${peer.name} directly via P2P (${avgMbps} Mbps)`);
-            }
+            console.log(`[TRANSFER] Completed "${fileName}" to ${peer.name} (${workerData.avgSpeedMBs} MB/s | ${workerData.avgSpeedMbps} Mbps)`);
+            this.fetchVaultItems();
+            this.fetchVaultStats();
+            this.showToast(`✓ Sent ${file.name} to ${peer.name} (${workerData.avgSpeedMBs} MB/s)`);
 
         } catch (err) {
-            console.error(`[TRANSFER] Failed direct streaming to ${peer.name}:`, err);
+            console.error(`[TRANSFER] Failed streaming to ${peer.name}:`, err);
             workerData.status = 'failed';
             workerData.errorMessage = err.message;
             this.renderTransferEngine();
@@ -1553,35 +1410,21 @@ class HyperDropApp {
 
     async loadQrCode(selectedIp = null) {
         try {
-            const pairCode = this.currentRemoteSession ? (this.currentRemoteSession.shortCode || this.currentRemoteSession.sessionId) : null;
-            let url = selectedIp ? `/api/qr?ip=${encodeURIComponent(selectedIp)}` : '/api/qr';
-            if (pairCode) {
-                url += (url.includes('?') ? '&' : '?') + `code=${encodeURIComponent(pairCode)}`;
-            }
-
+            const url = selectedIp ? `/api/qr?ip=${encodeURIComponent(selectedIp)}` : '/api/qr';
             const res = await fetch(url);
             const data = await res.json();
             if (data.success) {
                 const qrImg = document.getElementById('qr-image');
                 const qrUrl = document.getElementById('qr-url-text');
                 
-                // If on public HTTPS cloud domain (Render/Vercel), ensure exact window origin is used
-                const displayUrl = (window.location.protocol === 'https:' && !data.url.startsWith('https:'))
-                    ? window.location.origin
-                    : data.url;
+                const displayUrl = data.url;
 
                 if (qrImg) qrImg.src = data.qrCode;
                 if (qrUrl) qrUrl.textContent = displayUrl;
 
                 const container = document.getElementById('qr-network-selector');
                 if (container) {
-                    if (window.location.protocol === 'https:') {
-                        container.innerHTML = `
-                            <div style="font-size:11px; color:var(--neon-green); font-weight:700; text-align:center; margin-bottom:8px;">
-                                <i class="fa-solid fa-bolt"></i> Direct WebRTC P2P Pairing Ready
-                            </div>
-                        `;
-                    } else if (data.interfaces && data.interfaces.length > 1) {
+                    if (data.interfaces && data.interfaces.length > 1) {
                         container.innerHTML = `
                             <div style="display:flex; align-items:center; gap:8px; justify-content:center; margin-bottom:8px;">
                                 <span style="font-size:11px; color:var(--text-dim); font-weight:600;">Active Network:</span>
@@ -1628,63 +1471,21 @@ class HyperDropApp {
                 const d = data.diagnostics;
                 const isHotspot = d.isHotspot;
 
-                // Collect live WebRTC transport stats
-                const activeTransports = Array.from(this.connectionManager.transports.values());
-                const webrtcInfoList = [];
-                for (const t of activeTransports) {
-                    if (t.peerConnection) {
-                        const stats = await t.detectConnectionMode();
-                        webrtcInfoList.push({
-                            peerName: t.peer.name,
-                            path: stats.path || t.connectionPath,
-                            localType: stats.localType,
-                            remoteType: stats.remoteType,
-                            rttMs: stats.rttMs,
-                            status: t.status
-                        });
-                    }
-                }
-
                 body.innerHTML = `
                     <div style="display:flex; flex-direction:column; gap:10px;">
                         
-                        <!-- Top WebRTC P2P Engine Status Card -->
-                        <div style="background:#070d18; border:1px solid var(--neon-cyan); border-radius:8px; padding:12px; box-shadow:0 0 12px rgba(0,242,254,0.15);">
+                        <!-- Top Network Status Card -->
+                        <div style="background:#070d18; border:1px solid ${isHotspot ? '#ff9900' : 'var(--neon-cyan)'}; border-radius:8px; padding:12px; box-shadow:0 0 12px rgba(0,242,254,0.15);">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                <span style="font-weight:700; color:var(--neon-cyan); font-size:13px;">
-                                    <i class="fa-solid fa-bolt"></i> WebRTC P2P Data Plane (Zero Cloud File Relay)
+                                <span style="font-weight:700; color:${isHotspot ? '#ff9900' : 'var(--neon-cyan)'}; font-size:13px;">
+                                    <i class="fa-solid ${isHotspot ? 'fa-tower-broadcast' : 'fa-wifi'}"></i> ${d.interfaceName} (${d.interfaceType.toUpperCase()})
                                 </span>
                                 <span style="font-size:10px; background:rgba(0,255,135,0.15); color:var(--neon-green); padding:2px 8px; border-radius:10px; font-weight:700;">
-                                    ● ACTIVE
+                                    ● LOCAL HIGH-SPEED ACTIVE
                                 </span>
                             </div>
-                            <div style="font-size:11px; color:var(--text-dim);">
-                                Same Wi-Fi uses ICE <code>host</code> candidates for direct local LAN speeds. Cloud server carries only lightweight signaling.
-                            </div>
+                            <div style="font-size:11px; color:var(--text-dim);">${d.offlineModeHealth}</div>
                         </div>
-
-                        <!-- Active WebRTC Connections Details -->
-                        ${webrtcInfoList.length > 0 ? `
-                            <div style="background:#050b14; border:1px solid rgba(0,255,135,0.3); border-radius:6px; padding:10px;">
-                                <div style="font-size:11px; font-weight:700; color:var(--neon-green); margin-bottom:6px;">
-                                    <i class="fa-solid fa-link"></i> Live P2P Connection Stats:
-                                </div>
-                                <div style="display:flex; flex-direction:column; gap:6px;">
-                                    ${webrtcInfoList.map(info => `
-                                        <div style="font-size:11px; padding:6px; background:#070d18; border-radius:4px; border:1px solid #1a2c48;">
-                                            <div style="display:flex; justify-content:space-between; font-weight:700;">
-                                                <span style="color:#fff;">📱 ${info.peerName}</span>
-                                                <span style="color:var(--neon-cyan);">${info.path}</span>
-                                            </div>
-                                            <div style="font-size:10px; color:var(--text-dim); margin-top:2px; display:flex; justify-content:space-between;">
-                                                <span>ICE Candidates: Local [<b>${info.localType}</b>] ↔ Remote [<b>${info.remoteType}</b>]</span>
-                                                <span>RTT: ${info.rttMs}ms</span>
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        ` : ''}
 
                         <!-- 2-Column Grid of Network Parameters -->
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
@@ -1697,12 +1498,12 @@ class HyperDropApp {
                                 <div style="font-size:13px; font-weight:700; color:var(--text-main); font-family:monospace; margin-top:2px;">${d.subnetMask}</div>
                             </div>
                             <div style="background:#050b14; border:1px solid #1a2c48; border-radius:6px; padding:8px 10px;">
-                                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase;">Signaling Server</div>
-                                <div style="font-size:13px; font-weight:700; color:var(--neon-green); margin-top:2px;">WebSocket Connected</div>
+                                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase;">Gateway IP</div>
+                                <div style="font-size:13px; font-weight:700; color:var(--neon-green); font-family:monospace; margin-top:2px;">${d.gatewayIp}</div>
                             </div>
                             <div style="background:#050b14; border:1px solid #1a2c48; border-radius:6px; padding:8px 10px;">
-                                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase;">Data Plane Protocol</div>
-                                <div style="font-size:13px; font-weight:700; color:var(--neon-cyan); margin-top:2px;">WebRTC DataChannel</div>
+                                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase;">Discovery Engine</div>
+                                <div style="font-size:13px; font-weight:700; color:var(--neon-cyan); margin-top:2px;">${d.discoveryEngineStatus}</div>
                             </div>
                         </div>
 
@@ -1716,11 +1517,11 @@ class HyperDropApp {
                                     ${Array.from(this.peers.values()).map(p => `
                                         <div style="font-size:11px; display:flex; justify-content:space-between; padding:4px 6px; background:#070d18; border-radius:4px;">
                                             <span>${p.avatar || '📱'} <b>${p.name}</b></span>
-                                            <span style="color:var(--neon-cyan); font-size:10px;">Direct P2P Ready</span>
+                                            <span style="color:var(--neon-green); font-size:10px;">Local 4MB Direct Ready</span>
                                         </div>
                                     `).join('')}
                                 </div>
-                            ` : `<div style="font-size:10px; color:var(--text-dim);">No remote peers connected yet. Scan QR to connect phone!</div>`}
+                            ` : `<div style="font-size:10px; color:var(--text-dim);">No peers discovered on this subnet yet. Scan QR to connect phone!</div>`}
                         </div>
                     </div>
                 `;

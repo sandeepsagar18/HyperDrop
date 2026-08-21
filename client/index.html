@@ -24,7 +24,6 @@
                 <div class="top-center-controls">
                     <button id="rename-top-btn" class="pill-btn"><i class="fa-solid fa-pen-to-square"></i> Rename Device</button>
                     <button id="qr-btn" class="pill-btn"><i class="fa-solid fa-qrcode"></i> Connect Phone QR</button>
-                    <button id="remote-btn" class="pill-btn" style="border-color:rgba(0,242,254,0.4); color:var(--neon-cyan);"><i class="fa-solid fa-earth-americas"></i> Remote Connect</button>
                     <button id="diag-btn" class="pill-btn" style="border-color:rgba(0,255,135,0.4); color:var(--neon-green);"><i class="fa-solid fa-chart-line"></i> Network Diagnostics</button>
                 </div>
             </div>
@@ -204,23 +203,23 @@
                     HyperDrop is a peer-to-peer file transfer engine engineered for instant cross-device sharing directly over local Wi-Fi radio waves (LAN/Hotspot) or remote WebRTC P2P across different networks.
                 </p>
                 <div class="modes-inline-list">
-                    <div class="mode-inline-pill">
-                        <i class="fa-solid fa-wifi" style="color:var(--neon-cyan);"></i>
-                        <span><b>Same Wi-Fi:</b> High-speed local LAN streaming without internet.</span>
+                    <div class="footer-feature-item">
+                        <i class="fa-solid fa-wifi" style="color:var(--neon-green);"></i>
+                        <span><b>Local Wi-Fi Network:</b> Instant device pairing on same local router without cables.</span>
                     </div>
-                    <div class="mode-inline-pill">
-                        <i class="fa-solid fa-mobile-screen-button" style="color:var(--neon-green);"></i>
-                        <span><b>Offline Hotspot:</b> Connect Laptop to Phone Hotspot (Mobile Data OFF).</span>
+                    <div class="footer-feature-item">
+                        <i class="fa-solid fa-tower-broadcast" style="color:var(--neon-cyan);"></i>
+                        <span><b>Mobile Hotspot Mode:</b> Zero router needed. Connect directly to phone hotspot.</span>
                     </div>
-                    <div class="mode-inline-pill">
-                        <i class="fa-solid fa-earth-americas" style="color:#ff9900;"></i>
-                        <span><b>Remote P2P (WebRTC):</b> Transfer across different Wi-Fi networks & Mobile Data.</span>
+                    <div class="footer-feature-item">
+                        <i class="fa-solid fa-bolt" style="color:#ff9900;"></i>
+                        <span><b>Max Hardware Speeds:</b> Multi-gigabyte file transfers at full local Wi-Fi bandwidth.</span>
                     </div>
                 </div>
             </div>
             
             <div class="footer-bottom-bar">
-                <span>HyperDrop Engine v2.0 • Hybrid Local LAN & WebRTC P2P</span>
+                <span>HyperDrop Engine • High-Speed Local Wi-Fi & Hotspot Transfer</span>
             </div>
         </footer>
     </div>
@@ -294,68 +293,6 @@
 
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; display:flex; align-items:center; justify-content:center; gap:6px;">
                     <i class="fa-solid fa-wifi" style="color:var(--neon-cyan);"></i> Both devices must be on the same local network or hotspot
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL: Remote Connect (WebRTC Cross-Network Pairing) -->
-    <div id="remote-modal" class="modal">
-        <div class="modal-content glass-card" style="max-width: 480px;">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-earth-americas" style="color:var(--neon-cyan);"></i> Remote WebRTC Transfer</h3>
-                <button class="modal-close-btn">&times;</button>
-            </div>
-            <div class="modal-body" style="font-size: 13px;">
-                <div style="display:flex; gap:8px; margin-bottom:14px; background:#050b14; padding:4px; border-radius:8px; border:1px solid #1a2c48;">
-                    <button id="remote-tab-share" class="btn-micro" style="flex:1; padding:6px; background:rgba(0,242,254,0.15); color:var(--neon-cyan); font-weight:700; border-radius:6px; border:none;">
-                        1. Share Code (Host)
-                    </button>
-                    <button id="remote-tab-join" class="btn-micro" style="flex:1; padding:6px; background:transparent; color:var(--text-dim); font-weight:700; border-radius:6px; border:none;">
-                        2. Join Remote Device
-                    </button>
-                </div>
-
-                <!-- Tab 1: Share / Host View -->
-                <div id="remote-view-share">
-                    <div id="remote-tunnel-badge" style="font-size:11px; color:var(--neon-green); font-weight:700; margin-bottom:8px; text-align:center;">
-                        <i class="fa-solid fa-circle-check"></i> Public HTTPS Tunnel (4G/5G Cellular Ready)
-                    </div>
-                    <p style="color:var(--text-dim); margin-bottom:8px; text-align:center; font-size:12px;">
-                        Scan with your mobile camera from any 4G/5G network anywhere:
-                    </p>
-                    
-                    <div style="background:#070d18; border:1px solid var(--neon-cyan); border-radius:10px; padding:12px; text-align:center; margin-bottom:12px; box-shadow:0 0 16px rgba(0,242,254,0.15);">
-                        <!-- Remote QR Code Container -->
-                        <div class="qr-container" style="padding:6px; margin:0 auto 10px; width:180px; height:180px; background:#070d18; border:1px solid rgba(0,242,254,0.3); border-radius:8px; display:flex; align-items:center; justify-content:center;">
-                            <img id="remote-qr-image" style="width:100%; height:100%; border-radius:6px; object-fit:contain;" alt="Remote Pairing QR Code">
-                        </div>
-
-                        <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px;">Or Enter 6-Digit Pairing Code</div>
-                        <div id="remote-share-code" style="font-size:24px; font-weight:900; color:var(--neon-cyan); letter-spacing:3px; margin:4px 0;">GENERATING...</div>
-                        
-                        <div id="remote-tunnel-url-text" style="font-size:10.5px; color:var(--text-dim); word-break:break-all; margin:4px 0 8px;">https://hyperdrop.loca.lt</div>
-
-                        <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
-                            <button id="copy-remote-code-btn" class="btn-micro" style="color:var(--neon-green); border-color:rgba(0,255,135,0.4);"><i class="fa-solid fa-copy"></i> Copy Code</button>
-                            <button id="copy-remote-link-btn" class="btn-micro" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.4);"><i class="fa-solid fa-link"></i> Copy Join Link</button>
-                        </div>
-                    </div>
-
-                    <div style="text-align:center; font-size:11px; color:var(--text-dim);">
-                        <i class="fa-solid fa-lock" style="color:var(--neon-green);"></i> Direct P2P WebRTC connection across Wi-Fi & 4G/5G mobile networks.
-                    </div>
-                </div>
-
-                <!-- Tab 2: Join View -->
-                <div id="remote-view-join" style="display:none;">
-                    <p style="color:var(--text-dim); margin-bottom:10px;">
-                        Enter the 6-character code from the remote device:
-                    </p>
-                    <input type="text" id="remote-join-code-input" class="text-input" placeholder="e.g. HD-7890" maxlength="10" style="text-align:center; font-size:20px; font-weight:700; letter-spacing:2px; text-transform:uppercase;">
-                    <button id="btn-submit-remote-join" class="btn-primary-glow" style="width:100%; margin-top:12px;">
-                        <i class="fa-solid fa-link"></i> Connect to Remote Device
-                    </button>
                 </div>
             </div>
         </div>
