@@ -316,10 +316,16 @@ class WebRTCTransport extends TransferTransport {
         }
 
         return new Promise((resolve) => {
+            let timer = null;
             const onLow = () => {
-                this.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                if (timer) clearTimeout(timer);
+                if (this.dataChannel) this.dataChannel.removeEventListener('bufferedamountlow', onLow);
                 resolve();
             };
+            timer = setTimeout(() => {
+                if (this.dataChannel) this.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                resolve();
+            }, 100);
             this.dataChannel.addEventListener('bufferedamountlow', onLow);
         });
     }
@@ -356,14 +362,17 @@ class WebRTCTransport extends TransferTransport {
     }
 
     /**
-     * High-speed direct streaming over RTCDataChannel.send()
+     * Ultra-high-speed pipelined block streaming over RTCDataChannel.send()
+     * Eliminates per-chunk async micro-task latency by reading in 2MB blocks
+     * and transmitting 64KB SCTP packets synchronously in memory.
      */
     async streamFile(file, meta, onProgress) {
         if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
             throw new Error('DataChannel is not open');
         }
 
-        const CHUNK_SIZE = this.chunkSize; // 64KB
+        const CHUNK_SIZE = this.chunkSize || (64 * 1024); // 64KB
+        const BLOCK_SIZE = 2 * 1024 * 1024; // 2MB block reading
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
         const numericId = this._getNumericId(meta.fileId);
 
@@ -376,67 +385,78 @@ class WebRTCTransport extends TransferTransport {
             senderName: meta.senderName || this.clientName
         });
 
-        // 2. High-throughput chunk streaming with continuous buffer saturation
+        // 2. High-throughput pipelined block streaming
         let bytesTransferred = 0;
+        let chunkIndex = 0;
         const startTime = Date.now();
         let lastProgressTime = Date.now();
         let lastProgressBytes = 0;
 
-        for (let i = 0; i < totalChunks; i++) {
+        for (let blockOffset = 0; blockOffset < file.size; blockOffset += BLOCK_SIZE) {
             if (meta.isCancelled && meta.isCancelled()) {
                 console.log(`[WEBRTC] Transfer cancelled by sender for ${meta.fileName}`);
                 return;
             }
 
-            // Wait only when SCTP buffer is saturated (above 2MB)
-            if (this.dataChannel.bufferedAmount >= this.maxBufferThreshold) {
-                await this._waitForBufferDrain();
-            }
+            const blockEnd = Math.min(blockOffset + BLOCK_SIZE, file.size);
+            const blockBlob = file.slice(blockOffset, blockEnd);
+            const blockBuf = await blockBlob.arrayBuffer();
+            const blockBytes = new Uint8Array(blockBuf);
 
-            const startByte = i * CHUNK_SIZE;
-            const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
-            const chunkBlob = file.slice(startByte, endByte);
-            const chunkBuf = await chunkBlob.arrayBuffer();
+            for (let subOffset = 0; subOffset < blockBytes.byteLength; subOffset += CHUNK_SIZE) {
+                if (meta.isCancelled && meta.isCancelled()) return;
 
-            // 16-Byte Header + Payload
-            const packet = new Uint8Array(16 + chunkBuf.byteLength);
-            const view = new DataView(packet.buffer);
-            view.setUint32(0, numericId, false);
-            view.setUint32(4, i, false);
-            view.setUint32(8, totalChunks, false);
-            view.setUint32(12, chunkBuf.byteLength, false);
-            packet.set(new Uint8Array(chunkBuf), 16);
-
-            // DIRECT RTCDataChannel.send() — ZERO SERVER INVOLVEMENT
-            this.dataChannel.send(packet.buffer);
-
-            bytesTransferred += chunkBuf.byteLength;
-
-            const now = Date.now();
-            const deltaMs = now - lastProgressTime;
-            if (deltaMs >= 250 || i === totalChunks - 1) {
-                const deltaBytes = bytesTransferred - lastProgressBytes;
-                const elapsedSec = (now - startTime) / 1000;
-                const instantaneousSpeedMBs = deltaMs > 0 ? (deltaBytes / (1024 * 1024) / (deltaMs / 1000)) : 0;
-                const instantaneousSpeedMbps = deltaMs > 0 ? ((deltaBytes * 8) / (deltaMs / 1000) / 1000000) : 0;
-                const averageSpeedMBs = elapsedSec > 0 ? (bytesTransferred / (1024 * 1024) / elapsedSec) : 0;
-                const averageSpeedMbps = elapsedSec > 0 ? ((bytesTransferred * 8) / elapsedSec / 1000000) : 0;
-                const percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
-
-                if (onProgress) {
-                    onProgress({
-                        bytesTransferred,
-                        percent,
-                        speedMBs: parseFloat(instantaneousSpeedMBs.toFixed(1)),
-                        speedMbps: parseFloat(instantaneousSpeedMbps.toFixed(1)),
-                        averageSpeedMBs: parseFloat(averageSpeedMBs.toFixed(1)),
-                        averageSpeedMbps: parseFloat(averageSpeedMbps.toFixed(1)),
-                        etaSeconds: instantaneousSpeedMBs > 0 ? Math.ceil((file.size - bytesTransferred) / (instantaneousSpeedMBs * 1024 * 1024)) : 0
-                    });
+                // Non-blocking backpressure flow control
+                if (this.dataChannel.bufferedAmount >= this.maxBufferThreshold) {
+                    await this._waitForBufferDrain();
                 }
 
-                lastProgressTime = now;
-                lastProgressBytes = bytesTransferred;
+                const subEnd = Math.min(subOffset + CHUNK_SIZE, blockBytes.byteLength);
+                const chunkLen = subEnd - subOffset;
+                const chunkPayload = blockBytes.subarray(subOffset, subEnd);
+
+                // 16-Byte Framing Header + Payload
+                const packet = new Uint8Array(16 + chunkLen);
+                const view = new DataView(packet.buffer);
+                view.setUint32(0, numericId, false);
+                view.setUint32(4, chunkIndex, false);
+                view.setUint32(8, totalChunks, false);
+                view.setUint32(12, chunkLen, false);
+                packet.set(chunkPayload, 16);
+
+                // Direct binary RTCDataChannel.send() — Zero Server Involvement
+                this.dataChannel.send(packet.buffer);
+
+                bytesTransferred += chunkLen;
+                chunkIndex++;
+
+                // Throttled live UI progress calculation (every 200ms)
+                const now = Date.now();
+                const deltaMs = now - lastProgressTime;
+                if (deltaMs >= 200 || chunkIndex === totalChunks) {
+                    const deltaBytes = bytesTransferred - lastProgressBytes;
+                    const elapsedSec = (now - startTime) / 1000;
+                    const instMBs = deltaMs > 0 ? (deltaBytes / (1024 * 1024) / (deltaMs / 1000)) : 0;
+                    const instMbps = deltaMs > 0 ? ((deltaBytes * 8) / (deltaMs / 1000) / 1000000) : 0;
+                    const avgMBs = elapsedSec > 0 ? (bytesTransferred / (1024 * 1024) / elapsedSec) : 0;
+                    const avgMbps = elapsedSec > 0 ? ((bytesTransferred * 8) / elapsedSec / 1000000) : 0;
+                    const percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+
+                    if (onProgress) {
+                        onProgress({
+                            bytesTransferred,
+                            percent,
+                            speedMBs: parseFloat(instMBs.toFixed(1)),
+                            speedMbps: parseFloat(instMbps.toFixed(1)),
+                            averageSpeedMBs: parseFloat(avgMBs.toFixed(1)),
+                            averageSpeedMbps: parseFloat(avgMbps.toFixed(1)),
+                            etaSeconds: instMBs > 0 ? Math.ceil((file.size - bytesTransferred) / (instMBs * 1024 * 1024)) : 0
+                        });
+                    }
+
+                    lastProgressTime = now;
+                    lastProgressBytes = bytesTransferred;
+                }
             }
         }
     }
