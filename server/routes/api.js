@@ -7,15 +7,12 @@ const { getNetworkInterfaces, getPrimaryIp } = require('../network/interfaces');
 const networkMonitor = require('../network/networkMonitor');
 const vaultManager = require('../vault/vaultManager');
 const { exportFileToStorage, batchExportToStorage, getSystemDirectories } = require('../vault/exportHandler');
-const tunnelManager = require('../network/tunnelManager');
 const crypto = require('crypto');
 
 const os = require('os');
 const activeSessions = new Map(); // token -> { deviceId, deviceName, createdAt }
 
-const TEMP_UPLOADS_DIR = process.env.VERCEL
-    ? path.join(os.tmpdir(), '.hyperdrop_vault', 'temp_uploads')
-    : path.join(process.cwd(), '.hyperdrop_vault', 'temp_uploads');
+const TEMP_UPLOADS_DIR = path.join(process.cwd(), '.hyperdrop_vault', 'temp_uploads');
 
 function createApiRouter({ discoveryEngine, workerPool, appState }) {
     const router = express.Router();
@@ -135,26 +132,13 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
         res.json({ success: true, peer });
     });
 
-    // 3. QR Code generator for Hotspot/Wi-Fi mobile pairing & instant WebRTC pairing
+    // 3. QR Code generator for Local Wi-Fi & Hotspot pairing
     router.get('/qr', async (req, res) => {
         try {
             const ifaces = getNetworkInterfaces();
             const requestedIp = req.query.ip;
-            const pairCode = req.query.code || req.query.pair || req.query.sessionId;
             const primaryIp = requestedIp || getPrimaryIp();
-            
-            const hostHeader = req.get('host');
-            const isLocal = !hostHeader || hostHeader.startsWith('localhost') || hostHeader.startsWith('127.0.0.1') || hostHeader.startsWith('192.168.') || hostHeader.startsWith('10.') || hostHeader.startsWith('172.');
-
-            let connectUrl;
-            if (process.env.RENDER_EXTERNAL_URL) {
-                connectUrl = process.env.RENDER_EXTERNAL_URL;
-            } else if (!isLocal && hostHeader) {
-                const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-                connectUrl = `${proto}://${hostHeader}`;
-            } else {
-                connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
-            }
+            const connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
 
             const qrDataUrl = await QRCode.toDataURL(connectUrl, {
                 width: 320,
@@ -171,70 +155,6 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
                 selectedIp: primaryIp,
                 interfaces: ifaces,
                 qrCode: qrDataUrl
-            });
-        } catch (err) {
-            res.status(500).json({ success: false, error: err.message });
-        }
-    });
-
-    // Public Remote Tunnel Endpoints
-    router.get('/remote/tunnel/status', (req, res) => {
-        res.json({ success: true, status: tunnelManager.getStatus() });
-    });
-
-    router.post('/remote/tunnel/start', async (req, res) => {
-        const result = await tunnelManager.startTunnel();
-        res.json(result);
-    });
-
-    router.post('/remote/tunnel/stop', async (req, res) => {
-        const result = await tunnelManager.stopTunnel();
-        res.json(result);
-    });
-
-    // Remote Session QR Code Generator (Auto-uses Public HTTPS URL on Render/Vercel or Public Tunnel)
-    router.get('/remote/qr', async (req, res) => {
-        try {
-            const { code, useTunnel } = req.query;
-            let tunnelStatus = tunnelManager.getStatus();
-
-            const hostHeader = req.get('host');
-            const isLocalHost = !hostHeader || hostHeader.startsWith('localhost') || hostHeader.startsWith('127.0.0.1') || hostHeader.startsWith('192.168.') || hostHeader.startsWith('10.') || hostHeader.startsWith('172.');
-
-            let baseUrl;
-            if (process.env.RENDER_EXTERNAL_URL) {
-                baseUrl = process.env.RENDER_EXTERNAL_URL;
-            } else if (!isLocalHost && hostHeader) {
-                const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-                baseUrl = `${proto}://${hostHeader}`;
-            } else {
-                // Local host: auto-start public tunnel if requested
-                if (!tunnelStatus.active && useTunnel !== 'false') {
-                    const startRes = await tunnelManager.startTunnel();
-                    if (startRes.success) {
-                        tunnelStatus = tunnelManager.getStatus();
-                    }
-                }
-                baseUrl = tunnelStatus.active ? tunnelStatus.publicUrl : `http://${getPrimaryIp()}:${discoveryEngine.httpPort}`;
-            }
-
-            const joinUrl = `${baseUrl}/?remote_join=${encodeURIComponent(code || '')}`;
-            
-            const qrDataUrl = await QRCode.toDataURL(joinUrl, {
-                width: 260,
-                margin: 2,
-                color: {
-                    dark: '#00f2fe',
-                    light: '#070d18'
-                }
-            });
-
-            res.json({
-                success: true,
-                joinUrl,
-                qrCode: qrDataUrl,
-                isPublicTunnel: !isLocalHost || tunnelStatus.active,
-                publicUrl: baseUrl
             });
         } catch (err) {
             res.status(500).json({ success: false, error: err.message });

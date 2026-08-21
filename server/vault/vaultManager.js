@@ -4,9 +4,7 @@ const os = require('os');
 const { EventEmitter } = require('events');
 const { computeFileHash } = require('../transfer/checksum');
 
-const VAULT_DIR = process.env.VERCEL 
-    ? path.join(os.tmpdir(), '.hyperdrop_vault') 
-    : path.join(process.cwd(), '.hyperdrop_vault');
+const VAULT_DIR = path.join(process.cwd(), '.hyperdrop_vault');
 const VAULT_DATA_FILE = path.join(VAULT_DIR, 'vault_index.json');
 
 class VaultManager extends EventEmitter {

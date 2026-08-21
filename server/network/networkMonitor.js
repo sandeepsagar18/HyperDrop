@@ -18,7 +18,7 @@ class NetworkMonitor extends EventEmitter {
     }
 
     start() {
-        if (this.isMonitoring || process.env.VERCEL) return;
+        if (this.isMonitoring) return;
         this.isMonitoring = true;
         this._checkNetwork();
         this.timer = setInterval(() => this._checkNetwork(), this.checkIntervalMs);

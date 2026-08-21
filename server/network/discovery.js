@@ -28,7 +28,7 @@ class DiscoveryEngine extends EventEmitter {
     }
 
     start() {
-        if (this.isRunning || process.env.VERCEL) return;
+        if (this.isRunning) return;
 
         this.socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
