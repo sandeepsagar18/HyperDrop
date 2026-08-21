@@ -1017,6 +1017,9 @@ class HyperDropApp {
         const workerId = `w_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const fileName = file.webkitRelativePath || file.relativePath || file.name;
         
+        // 1. Get Transport
+        const transport = await this.connectionManager.getTransportForPeer(peer);
+
         // Dynamic Adaptive Chunk Sizing for Large & Massive Files
         let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB default
         if (file.size > 5 * 1024 * 1024 * 1024) {
