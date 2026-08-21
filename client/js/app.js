@@ -1017,12 +1017,20 @@ class HyperDropApp {
         const workerId = `w_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const fileName = file.webkitRelativePath || file.relativePath || file.name;
         
-        // Ultra-High-Speed Local Wi-Fi / Hotspot Transport (4MB Chunks)
-        const transport = await this.connectionManager.getTransportForPeer(peer);
-        const CHUNK_SIZE = transport.chunkSize || (4 * 1024 * 1024);
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
+        // Dynamic Adaptive Chunk Sizing for Large & Massive Files
+        let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB default
+        if (file.size > 5 * 1024 * 1024 * 1024) {
+            CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks for massive files (>5GB)
+        } else if (file.size > 1024 * 1024 * 1024) {
+            CHUNK_SIZE = 8 * 1024 * 1024;  // 8MB chunks for large files (1GB - 5GB)
+        } else if (file.size < 30 * 1024 * 1024) {
+            CHUNK_SIZE = 2 * 1024 * 1024;  // 2MB chunks for small files (<30MB)
+        }
 
-        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
+        const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(0);
+
+        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Adaptive Chunks to ${peer.name}`);
 
         const workerData = {
             id: workerId,
@@ -1035,7 +1043,7 @@ class HyperDropApp {
             speedMBs: 0.0,
             speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: 'Local Wi-Fi / Hotspot (4MB Direct)',
+            transportMode: `Local Wi-Fi (${chunkSizeMB}MB Parallel)`,
             startTime: Date.now()
         };
 
@@ -1048,8 +1056,8 @@ class HyperDropApp {
             let lastCheckTime = Date.now();
             let lastCheckBytes = 0;
 
-            // Parallel Concurrent Worker Pool (Concurrency = 4 parallel streams)
-            const CONCURRENCY = Math.min(4, totalChunks);
+            // Parallel Concurrent Worker Pool (Up to 6 parallel streams for large files)
+            const CONCURRENCY = Math.min(6, totalChunks);
             let nextIndex = 0;
             let activeError = null;
 
