@@ -257,9 +257,24 @@ class HyperDropApp {
             fileInput.click();
         });
 
-        document.getElementById('choose-folder-btn').addEventListener('click', (e) => {
+        document.getElementById('choose-folder-btn').addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
+
+            if (window.showDirectoryPicker) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker();
+                    const files = await this.readDirectoryHandle(dirHandle, dirHandle.name);
+                    if (files && files.length > 0) {
+                        this.addStagedFiles(files);
+                    }
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.warn('[FOLDER] Native directory picker fallback:', err);
+                }
+            }
+
             folderInput.value = '';
             folderInput.click();
         });
@@ -896,6 +911,33 @@ class HyperDropApp {
             return files;
         }
         return [];
+    }
+
+    async readDirectoryHandle(dirHandle, pathPrefix = '') {
+        const files = [];
+        try {
+            for await (const entry of dirHandle.values()) {
+                const currentPath = pathPrefix ? `${pathPrefix}/${entry.name}` : entry.name;
+                if (entry.kind === 'file') {
+                    const file = await entry.getFile();
+                    try {
+                        Object.defineProperty(file, 'webkitRelativePath', {
+                            value: currentPath,
+                            writable: true,
+                            configurable: true
+                        });
+                    } catch (e) {}
+                    file.relativePath = currentPath;
+                    files.push(file);
+                } else if (entry.kind === 'directory') {
+                    const subFiles = await this.readDirectoryHandle(entry, currentPath);
+                    files.push(...subFiles);
+                }
+            }
+        } catch (err) {
+            console.error('[FOLDER] Error reading directory handle:', err);
+        }
+        return files;
     }
 
     // --- Staging & Sending Files ---
