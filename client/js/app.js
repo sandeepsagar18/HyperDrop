@@ -92,10 +92,11 @@ class HyperDropApp {
     registerDeviceOnRadar() {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({
-                type: 'register',
+                type: 'register_web_peer',
                 id: this.clientId,
                 name: this.clientName,
                 deviceType: this.clientType,
+                osType: navigator.platform || 'Device',
                 avatar: this.clientType === 'phone' ? '📱' : '💻',
                 url: window.location.origin
             }));
@@ -106,33 +107,56 @@ class HyperDropApp {
         const { type, data } = msg;
 
         switch (type) {
-            case 'peer_list':
-                if (Array.isArray(data)) {
-                    data.forEach(peer => {
-                        if (peer.id !== this.clientId) {
-                            this.peers.set(peer.id, peer);
+            case 'init_state':
+                if (data && data.peers) {
+                    data.peers.forEach(p => {
+                        if (p.id !== this.clientId) {
+                            this.peers.set(p.id, p);
+                            this.selectedPeerIds.add(p.id);
                         }
                     });
                     this.renderRadarOrbit();
                 }
                 break;
 
+            case 'peer_discovered':
             case 'peer_joined':
-                if (data.id !== this.clientId) {
+                if (data && data.id !== this.clientId) {
+                    const isNew = !this.peers.has(data.id);
                     this.peers.set(data.id, data);
+                    this.selectedPeerIds.add(data.id);
                     this.renderRadarOrbit();
-                    this.showToast(`✨ Discovered nearby device: ${data.name}`);
+                    if (isNew) {
+                        this.showToast(`✨ Nearby Device Detected: ${data.name}`);
+                    }
                 }
                 break;
 
-            case 'peer_left':
-                this.peers.delete(data.id);
-                this.selectedPeerIds.delete(data.id);
+            case 'peer_updated':
+            case 'peer_list':
+                if (Array.isArray(data)) {
+                    data.forEach(peer => {
+                        if (peer.id !== this.clientId) {
+                            this.peers.set(peer.id, peer);
+                            this.selectedPeerIds.add(peer.id);
+                        }
+                    });
+                } else if (data && data.id !== this.clientId) {
+                    this.peers.set(data.id, data);
+                }
                 this.renderRadarOrbit();
                 break;
 
+            case 'peer_lost':
+                if (data && data.id) {
+                    this.peers.delete(data.id);
+                    this.selectedPeerIds.delete(data.id);
+                    this.renderRadarOrbit();
+                }
+                break;
+
             case 'device_renamed':
-                if (data.deviceName) {
+                if (data && data.deviceName) {
                     this.renderRadarOrbit();
                 }
                 break;
@@ -752,11 +776,11 @@ class HyperDropApp {
 
             const isPhone = peer.deviceType === 'phone';
             const iconClass = isPhone ? 'fa-mobile-screen-button' : 'fa-laptop';
-            const badgeTag = peer.isRemote ? '[Remote P2P]' : (isPhone ? '[Mobile]' : '[PC]');
+            const badgeTag = isPhone ? '[Mobile]' : '[PC]';
 
             node.innerHTML = `
-                <div class="node-label" style="${peer.isRemote ? 'color:var(--neon-cyan);' : ''}">${peer.name} <span class="badge-tag" style="${peer.isRemote ? 'border-color:rgba(0,242,254,0.4); color:var(--neon-cyan);' : ''}">${badgeTag}</span></div>
-                <div class="node-icon-circle" style="${peer.isRemote ? 'border-color:var(--neon-cyan); box-shadow:0 0 14px rgba(0,242,254,0.3);' : (this.selectedPeerIds.has(peer.id) ? 'border-color:var(--neon-green); box-shadow:0 0 16px rgba(0,255,135,0.4);' : '')}">
+                <div class="node-label">${peer.name} <span class="badge-tag" style="border-color:rgba(0,255,135,0.4); color:var(--neon-green);">${badgeTag}</span></div>
+                <div class="node-icon-circle" style="${this.selectedPeerIds.has(peer.id) ? 'border-color:var(--neon-green); box-shadow:0 0 16px rgba(0,255,135,0.4);' : 'border-color:var(--neon-cyan); box-shadow:0 0 12px rgba(0,242,254,0.3);'}">
                     <i class="fa-solid ${iconClass}"></i>
                 </div>
             `;

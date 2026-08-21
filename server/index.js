@@ -147,7 +147,7 @@ wss.on('connection', (ws, req) => {
             handleSignalingMessage(ws, parsed, wss);
 
             // 2. Local Discovery & Heartbeat
-            if (parsed.type === 'register_web_peer') {
+            if (parsed.type === 'register_web_peer' || parsed.type === 'register') {
                 registeredPeerId = parsed.id;
                 ws.peerId = parsed.id; // Attach peerId to socket for targeted routing!
                 const peer = discoveryEngine.registerWebClient({
@@ -161,6 +161,8 @@ wss.on('connection', (ws, req) => {
                 });
                 // Acknowledge registration
                 ws.send(JSON.stringify({ type: 'registered_ack', data: peer }));
+                // Broadcast to all connected clients immediately
+                broadcastWs('peer_discovered', peer);
             } else if (parsed.type === 'heartbeat') {
                 const peer = discoveryEngine.peers.get(parsed.id);
                 if (peer) {
