@@ -1145,8 +1145,6 @@ class HyperDropApp {
         
         // 1. Get Direct WebRTC P2P Transport
         const transport = await this.connectionManager.getTransportForPeer(peer);
-        const CHUNK_SIZE = transport.chunkSize || (128 * 1024);
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
 
         console.log(`[TRANSFER] Initiating Direct WebRTC DataChannel transfer for "${fileName}" (${this.formatBytes(file.size)}) to ${peer.name}`);
 
@@ -1159,8 +1157,9 @@ class HyperDropApp {
             bytesTransferred: 0,
             percent: 0,
             speedMBs: 0.0,
+            speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: transport.connectionPath || 'Direct P2P (WebRTC)',
+            transportMode: transport.connectionClassification || 'Direct P2P (WebRTC)',
             startTime: Date.now()
         };
 
@@ -1171,7 +1170,7 @@ class HyperDropApp {
             // 2. Connect transport (DataChannel / ICE negotiation)
             await transport.connect({ clientId: this.clientId, clientName: this.clientName });
             const connStats = await transport.detectConnectionMode();
-            workerData.transportMode = connStats.path || 'Direct P2P (WebRTC)';
+            workerData.transportMode = connStats.classification || 'Direct P2P (WebRTC)';
             this.renderTransferEngine();
 
             // 3. Remote Transfer Authorization Request
@@ -1185,70 +1184,43 @@ class HyperDropApp {
                         fileName: fileName,
                         fileSize: file.size,
                         senderName: this.clientName,
-                        totalChunks,
-                        chunkSize: CHUNK_SIZE
+                        totalChunks: Math.ceil(file.size / transport.chunkSize) || 1,
+                        chunkSize: transport.chunkSize
                     }
                 }));
             }
 
-            let startChunkIndex = 0;
-            let lastCheckTime = Date.now();
-            let lastCheckBytes = workerData.bytesTransferred;
+            // 4. High-throughput pipelined stream over direct RTCDataChannel.send()
+            await transport.streamFile(file, {
+                fileId: workerId,
+                fileName: fileName,
+                isCancelled: () => workerData.status === 'cancelled'
+            }, (progress) => {
+                workerData.bytesTransferred = progress.bytesTransferred;
+                workerData.percent = progress.percent;
+                workerData.speedMBs = progress.speedMBs;
+                workerData.speedMbps = progress.speedMbps;
+                workerData.etaSeconds = progress.etaSeconds;
+                if (progress.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = progress.speedMBs;
+                this.renderTransferEngine();
+            });
 
-            for (let i = startChunkIndex; i < totalChunks; i++) {
-                if (workerData.status === 'cancelled') {
-                    console.log(`[TRANSFER] Transfer cancelled for ${fileName}`);
-                    return;
-                }
+            if (workerData.status !== 'cancelled') {
+                const totalElapsedSec = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
+                const avgMBs = (file.size / (1024 * 1024) / totalElapsedSec).toFixed(1);
+                const avgMbps = ((file.size * 8) / totalElapsedSec / 1000000).toFixed(1);
 
-                const startByte = i * CHUNK_SIZE;
-                const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
-                const chunkBlob = file.slice(startByte, endByte);
-
-                await transport.sendChunk(chunkBlob, {
-                    fileId: workerId,
-                    fileName: fileName,
-                    fileSize: file.size,
-                    chunkIndex: i,
-                    totalChunks,
-                    startByte,
-                    senderId: this.clientId,
-                    senderName: this.clientName
-                });
-
-                const chunkBytes = (endByte - startByte);
-                workerData.bytesTransferred += chunkBytes;
-                this.totalBytesMoved += chunkBytes;
-
-                workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
-
-                const now = Date.now();
-                const deltaMs = now - lastCheckTime;
-                if (deltaMs >= 300 || i === totalChunks - 1) {
-                    const deltaBytes = workerData.bytesTransferred - lastCheckBytes;
-                    const speedBps = (deltaBytes / (deltaMs / 1000));
-                    const speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                    
-                    workerData.speedMBs = speedMBs;
-                    if (speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = speedMBs;
-
-                    const remainingBytes = file.size - workerData.bytesTransferred;
-                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
-
-                    lastCheckTime = now;
-                    lastCheckBytes = workerData.bytesTransferred;
-                    this.renderTransferEngine();
-                }
+                workerData.status = 'completed';
+                workerData.percent = 100;
+                workerData.speedMBs = 0.0;
+                workerData.durationSec = totalElapsedSec.toFixed(1);
+                workerData.avgSpeedMBs = avgMBs;
+                workerData.avgSpeedMbps = avgMbps;
+                this.totalBytesMoved += file.size;
+                this.renderTransferEngine();
+                console.log(`[TRANSFER] Direct P2P transfer successfully finished for ${file.name} to ${peer.name} (${avgMBs} MB/s | ${avgMbps} Mbps)`);
+                this.showToast(`✓ Sent ${file.name} to ${peer.name} directly via P2P (${avgMbps} Mbps)`);
             }
-
-            workerData.status = 'completed';
-            workerData.percent = 100;
-            workerData.speedMBs = 0.0;
-            workerData.durationSec = ((Date.now() - workerData.startTime) / 1000).toFixed(1);
-            workerData.avgSpeedMBs = (file.size / (1024 * 1024) / Math.max(0.1, workerData.durationSec)).toFixed(1);
-            this.renderTransferEngine();
-            console.log(`[TRANSFER] Direct P2P transfer successfully finished for ${file.name} to ${peer.name}`);
-            this.showToast(`✓ Sent ${file.name} to ${peer.name} directly via P2P`);
 
         } catch (err) {
             console.error(`[TRANSFER] Failed direct streaming to ${peer.name}:`, err);

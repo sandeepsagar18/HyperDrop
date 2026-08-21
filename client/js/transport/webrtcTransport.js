@@ -2,17 +2,17 @@
  * WebRTCTransport
  * Ultra-high-performance peer-to-peer file transfer over WebRTC DataChannel.
  * 
- * Connection Paths:
- *  - Priority 1: Same Wi-Fi / Hotspot -> Direct LAN P2P (via ICE 'host' candidates, zero internet/cloud dependency)
- *  - Priority 2: Cross-Network -> Direct Internet P2P (via ICE 'srflx' STUN candidates)
- *  - Priority 3: Strict Firewall/NAT -> TURN Relay fallback (via ICE 'relay' candidates)
+ * Connection Classifications (Based on active selected ICE candidate pair):
+ *  - CASE 1: host <-> host               => "Local P2P Connect" (Same Wi-Fi / Hotspot)
+ *  - CASE 2: srflx <-> srflx / prflx      => "Remote P2P Connect" (Across Internet / NAT via STUN)
+ *  - CASE 3: relay                        => "Remote Relay" (TURN fallback)
  * 
- * Features:
- *  - Dynamic 128KB-256KB chunking for optimal SCTP throughput
- *  - Binary 16-byte frame header (zero JSON parsing per chunk)
- *  - Continuous non-blocking backpressure pipeline via bufferedAmountLowThreshold
- *  - Live ICE Candidate & Connection Path inspection (host/srflx/relay)
- *  - Direct in-browser assembly & instant download (ZERO cloud server relay)
+ * Performance Optimizations:
+ *  - Buffered ICE candidate queueing to prevent host candidate drops from race conditions
+ *  - Pipelined 64KB binary packet transmission over RTCDataChannel.send()
+ *  - Continuous 2MB SCTP kernel buffer saturation with bufferedAmountLowThreshold
+ *  - Zero DOM thrashing on receiver (throttled UI dispatch)
+ *  - ZERO server-side file relay (no WebSocket file data, no HTTP upload, no Render disk)
  */
 class WebRTCTransport extends TransferTransport {
     constructor(peer, ws, options = {}) {
@@ -24,19 +24,23 @@ class WebRTCTransport extends TransferTransport {
         this.clientId = options.clientId || null;
         this.clientName = options.clientName || 'Device';
         
-        this.mode = 'webrtc-p2p'; // 'webrtc-lan' | 'webrtc-p2p' | 'webrtc-turn'
-        this.connectionPath = 'Detecting...';
+        this.mode = 'webrtc-p2p';
+        this.connectionClassification = 'Detecting...';
+        this.pendingIceCandidates = []; // Prevents race condition dropping host candidates before remoteDescription
+        
         this.connectionStats = {
-            path: 'Detecting...',
-            localType: 'unknown',
-            remoteType: 'unknown',
-            isDirectLan: false,
-            isRelay: false,
-            rttMs: 0
+            classification: 'Detecting...',
+            localCandidateType: 'unknown',
+            remoteCandidateType: 'unknown',
+            candidatePair: 'Detecting...',
+            protocol: 'udp',
+            currentRoundTripTime: 0,
+            availableOutgoingBitrate: null,
+            availableIncomingBitrate: null
         };
 
-        this.chunkSize = options.chunkSize || (128 * 1024); // 128KB optimal WebRTC packet size
-        this.maxBufferThreshold = options.maxBufferThreshold || (1.5 * 1024 * 1024); // 1.5MB pipeline buffer
+        this.chunkSize = options.chunkSize || (64 * 1024); // 64KB optimal WebRTC DataChannel packet size
+        this.maxBufferThreshold = options.maxBufferThreshold || (2 * 1024 * 1024); // 2MB kernel pipeline buffer
         this.isHost = options.isHost !== false;
         this.iceConfig = options.iceConfig || {
             iceServers: [
@@ -81,7 +85,7 @@ class WebRTCTransport extends TransferTransport {
                         this.detectConnectionMode();
                     } else if (state === 'failed') {
                         console.warn('[WEBRTC] ICE Connection failed. Checking fallback...');
-                        this.mode = 'webrtc-turn';
+                        this.connectionClassification = 'Remote Relay';
                     }
                 };
 
@@ -123,61 +127,67 @@ class WebRTCTransport extends TransferTransport {
         try {
             const stats = await this.peerConnection.getStats();
             let selectedPair = null;
+            let localCandidate = null;
+            let remoteCandidate = null;
 
             stats.forEach(report => {
-                if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.selected)) {
+                if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.selected || report.nominated)) {
                     selectedPair = report;
                 }
             });
 
             if (selectedPair) {
-                const localCandidate = stats.get(selectedPair.localCandidateId);
-                const remoteCandidate = stats.get(selectedPair.remoteCandidateId);
-
-                const localType = localCandidate ? localCandidate.candidateType : 'unknown';
-                const remoteType = remoteCandidate ? remoteCandidate.candidateType : 'unknown';
-                const rtt = selectedPair.currentRoundTripTime ? Math.round(selectedPair.currentRoundTripTime * 1000) : 0;
-
-                const isHostCandidate = localType === 'host' || remoteType === 'host';
-                const isRelayCandidate = localType === 'relay' || remoteType === 'relay';
-
-                if (isRelayCandidate) {
-                    this.mode = 'webrtc-turn';
-                    this.connectionPath = 'TURN Relay';
-                } else if (isHostCandidate) {
-                    this.mode = 'webrtc-lan';
-                    this.connectionPath = 'LAN P2P (Local Wi-Fi / Hotspot)';
-                } else {
-                    this.mode = 'webrtc-p2p';
-                    this.connectionPath = 'Direct Internet P2P (WebRTC STUN)';
-                }
-
-                this.connectionStats = {
-                    path: this.connectionPath,
-                    localType,
-                    remoteType,
-                    localIp: localCandidate ? (localCandidate.address || localCandidate.ip) : 'unknown',
-                    remoteIp: remoteCandidate ? (remoteCandidate.address || remoteCandidate.ip) : 'unknown',
-                    isDirectLan: isHostCandidate && !isRelayCandidate,
-                    isRelay: isRelayCandidate,
-                    rttMs: rtt
-                };
-
-                console.log(`[WEBRTC] Active Path: ${this.connectionPath} | Local: ${localType} | Remote: ${remoteType} | RTT: ${rtt}ms`);
+                localCandidate = stats.get(selectedPair.localCandidateId);
+                remoteCandidate = stats.get(selectedPair.remoteCandidateId);
             }
-        } catch (e) {}
+
+            const localType = localCandidate ? localCandidate.candidateType : 'unknown';
+            const remoteType = remoteCandidate ? remoteCandidate.candidateType : 'unknown';
+            const protocol = selectedPair ? (selectedPair.protocol || 'udp') : 'udp';
+            const rtt = selectedPair && selectedPair.currentRoundTripTime ? Math.round(selectedPair.currentRoundTripTime * 1000) : 0;
+            const availableOutgoingBitrate = selectedPair ? selectedPair.availableOutgoingBitrate : null;
+            const availableIncomingBitrate = selectedPair ? selectedPair.availableIncomingBitrate : null;
+
+            // Strict Connection Classification based on selected ICE candidate types
+            let classification = 'Remote P2P Connect';
+            if (localType === 'host' && remoteType === 'host') {
+                classification = 'Local P2P Connect';
+            } else if (localType === 'relay' || remoteType === 'relay') {
+                classification = 'Remote Relay';
+            } else {
+                classification = 'Remote P2P Connect';
+            }
+
+            this.connectionClassification = classification;
+            this.connectionStats = {
+                classification,
+                localCandidateType: localType,
+                remoteCandidateType: remoteType,
+                candidatePair: `${localType} (${localCandidate ? (localCandidate.address || localCandidate.ip) : '?'}) ↔ ${remoteType} (${remoteCandidate ? (remoteCandidate.address || remoteCandidate.ip) : '?'})`,
+                protocol,
+                currentRoundTripTime: rtt,
+                availableOutgoingBitrate,
+                availableIncomingBitrate,
+                isDirectLan: localType === 'host' && remoteType === 'host',
+                isRelay: localType === 'relay' || remoteType === 'relay'
+            };
+
+            console.log(`[WEBRTC STATS] Classification: ${classification} | Local: ${localType} | Remote: ${remoteType} | RTT: ${rtt}ms | OutgoingBitrate: ${availableOutgoingBitrate || 'N/A'}`);
+        } catch (e) {
+            console.error('[WEBRTC] Error querying getStats:', e);
+        }
         return this.connectionStats;
     }
 
     _setupDataChannel(channel, resolve, reject) {
         channel.binaryType = 'arraybuffer';
-        channel.bufferedAmountLowThreshold = 512 * 1024; // 512KB low threshold
+        channel.bufferedAmountLowThreshold = 512 * 1024; // 512KB low threshold for non-blocking backpressure
 
         channel.onopen = async () => {
             this.status = 'connected';
             await this.detectConnectionMode();
-            console.log(`[WEBRTC] Direct DataChannel opened with ${this.peer.name} [Path: ${this.connectionPath}]`);
-            if (resolve) resolve({ success: true, mode: this.mode, stats: this.connectionStats });
+            console.log(`[WEBRTC] Direct DataChannel opened with ${this.peer.name} [Classification: ${this.connectionClassification}]`);
+            if (resolve) resolve({ success: true, classification: this.connectionClassification, stats: this.connectionStats });
         };
 
         channel.onclose = () => {
@@ -222,6 +232,10 @@ class WebRTCTransport extends TransferTransport {
                 this.peerConnection = new RTCPeerConnection(this.iceConfig);
             }
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+            
+            // Drain buffered ICE candidates received before remoteDescription
+            await this._drainPendingIceCandidates();
+
             const answer = await this.peerConnection.createAnswer();
             await this.peerConnection.setLocalDescription(answer);
 
@@ -245,6 +259,8 @@ class WebRTCTransport extends TransferTransport {
             if (this.peerConnection) {
                 await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
                 console.log(`[WEBRTC] Remote SDP Answer set successfully for ${this.peer.name}`);
+                // Drain buffered ICE candidates
+                await this._drainPendingIceCandidates();
             }
         } catch (err) {
             console.error('[WEBRTC] Error setting remote answer:', err);
@@ -253,11 +269,25 @@ class WebRTCTransport extends TransferTransport {
 
     async handleRemoteIceCandidate(candidate) {
         try {
-            if (this.peerConnection) {
-                await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            if (!this.peerConnection || !this.peerConnection.remoteDescription || !this.peerConnection.remoteDescription.type) {
+                // Buffer candidate until setRemoteDescription completes
+                this.pendingIceCandidates.push(candidate);
+                return;
             }
+            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (err) {
             console.error('[WEBRTC] Error adding ICE candidate:', err);
+        }
+    }
+
+    async _drainPendingIceCandidates() {
+        if (!this.peerConnection || !this.pendingIceCandidates.length) return;
+        const candidates = [...this.pendingIceCandidates];
+        this.pendingIceCandidates = [];
+        for (const cand of candidates) {
+            try {
+                await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (err) {}
         }
     }
 
@@ -289,7 +319,6 @@ class WebRTCTransport extends TransferTransport {
     }
 
     async checkResumeStatus(fileId) {
-        // P2P DataChannel starts fresh per transfer session
         return { startChunkIndex: 0, completedChunks: [] };
     }
 
@@ -307,38 +336,90 @@ class WebRTCTransport extends TransferTransport {
         }));
     }
 
-    async sendChunk(chunkBlob, chunkMeta) {
+    /**
+     * High-speed direct streaming over RTCDataChannel.send()
+     */
+    async streamFile(file, meta, onProgress) {
         if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
             throw new Error('DataChannel is not open');
         }
 
-        // Send start metadata on chunk 0
-        if (chunkMeta.chunkIndex === 0) {
-            await this.sendStartSignal(chunkMeta);
+        const CHUNK_SIZE = this.chunkSize; // 64KB
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
+        const numericId = this._getNumericId(meta.fileId);
+
+        // 1. Send metadata header
+        await this.sendStartSignal({
+            fileId: meta.fileId,
+            fileName: meta.fileName,
+            fileSize: file.size,
+            totalChunks,
+            senderName: meta.senderName || this.clientName
+        });
+
+        // 2. High-throughput chunk streaming with continuous buffer saturation
+        let bytesTransferred = 0;
+        const startTime = Date.now();
+        let lastProgressTime = Date.now();
+        let lastProgressBytes = 0;
+
+        for (let i = 0; i < totalChunks; i++) {
+            if (meta.isCancelled && meta.isCancelled()) {
+                console.log(`[WEBRTC] Transfer cancelled by sender for ${meta.fileName}`);
+                return;
+            }
+
+            // Wait only when SCTP buffer is saturated (above 2MB)
+            if (this.dataChannel.bufferedAmount >= this.maxBufferThreshold) {
+                await this._waitForBufferDrain();
+            }
+
+            const startByte = i * CHUNK_SIZE;
+            const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
+            const chunkBlob = file.slice(startByte, endByte);
+            const chunkBuf = await chunkBlob.arrayBuffer();
+
+            // 16-Byte Header + Payload
+            const packet = new Uint8Array(16 + chunkBuf.byteLength);
+            const view = new DataView(packet.buffer);
+            view.setUint32(0, numericId, false);
+            view.setUint32(4, i, false);
+            view.setUint32(8, totalChunks, false);
+            view.setUint32(12, chunkBuf.byteLength, false);
+            packet.set(new Uint8Array(chunkBuf), 16);
+
+            // DIRECT RTCDataChannel.send() — ZERO SERVER INVOLVEMENT
+            this.dataChannel.send(packet.buffer);
+
+            bytesTransferred += chunkBuf.byteLength;
+
+            const now = Date.now();
+            const deltaMs = now - lastProgressTime;
+            if (deltaMs >= 250 || i === totalChunks - 1) {
+                const deltaBytes = bytesTransferred - lastProgressBytes;
+                const elapsedSec = (now - startTime) / 1000;
+                const instantaneousSpeedMBs = deltaMs > 0 ? (deltaBytes / (1024 * 1024) / (deltaMs / 1000)) : 0;
+                const instantaneousSpeedMbps = deltaMs > 0 ? ((deltaBytes * 8) / (deltaMs / 1000) / 1000000) : 0;
+                const averageSpeedMBs = elapsedSec > 0 ? (bytesTransferred / (1024 * 1024) / elapsedSec) : 0;
+                const averageSpeedMbps = elapsedSec > 0 ? ((bytesTransferred * 8) / elapsedSec / 1000000) : 0;
+                const percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+
+                if (onProgress) {
+                    onProgress({
+                        bytesTransferred,
+                        percent,
+                        speedMBs: parseFloat(instantaneousSpeedMBs.toFixed(1)),
+                        speedMbps: parseFloat(instantaneousSpeedMbps.toFixed(1)),
+                        averageSpeedMBs: parseFloat(averageSpeedMBs.toFixed(1)),
+                        averageSpeedMbps: parseFloat(averageSpeedMbps.toFixed(1)),
+                        etaSeconds: instantaneousSpeedMBs > 0 ? Math.ceil((file.size - bytesTransferred) / (instantaneousSpeedMBs * 1024 * 1024)) : 0
+                    });
+                }
+
+                lastProgressTime = now;
+                lastProgressBytes = bytesTransferred;
+            }
         }
-
-        // 1. Non-blocking backpressure drain
-        await this._waitForBufferDrain();
-
-        // 2. High-speed 16-byte Binary Packet:
-        // [0..3]: numericFileId (uint32)
-        // [4..7]: chunkIndex (uint32)
-        // [8..11]: totalChunks (uint32)
-        // [12..15]: byteLength (uint32)
-        // [16..]: raw payload
-        const numericId = this._getNumericId(chunkMeta.fileId);
-        const chunkBuf = await chunkBlob.arrayBuffer();
-        const packet = new Uint8Array(16 + chunkBuf.byteLength);
-        const view = new DataView(packet.buffer);
-
-        view.setUint32(0, numericId, false);
-        view.setUint32(4, chunkMeta.chunkIndex, false);
-        view.setUint32(8, chunkMeta.totalChunks, false);
-        view.setUint32(12, chunkBuf.byteLength, false);
-        packet.set(new Uint8Array(chunkBuf), 16);
-
-        this.dataChannel.send(packet.buffer);
-        return { success: true };
     }
 
     async _handleDataChannelMessage(data) {
@@ -358,7 +439,8 @@ class WebRTCTransport extends TransferTransport {
                         chunksReceived: 0,
                         bytesReceived: 0,
                         senderName: msg.senderName,
-                        startTime: Date.now()
+                        startTime: Date.now(),
+                        lastUiUpdate: Date.now()
                     });
 
                     if (window.app) {
@@ -370,7 +452,8 @@ class WebRTCTransport extends TransferTransport {
                             bytesTransferred: 0,
                             percent: 0,
                             speedMBs: 0.0,
-                            connectionPath: this.connectionPath
+                            speedMbps: 0.0,
+                            connectionPath: this.connectionClassification
                         });
                     }
                 } else if (msg.type === 'TRANSFER_COMPLETE_ACK') {
@@ -394,10 +477,13 @@ class WebRTCTransport extends TransferTransport {
             transfer.chunksReceived++;
             transfer.bytesReceived += payloadLen;
 
-            // Update Progress in UI
-            if (window.app && (chunkIndex % 8 === 0 || transfer.chunksReceived === totalChunks)) {
-                const elapsedSec = (Date.now() - transfer.startTime) / 1000;
+            // Throttled UI progress dispatch (every 200ms) to avoid mobile DOM thrashing
+            const now = Date.now();
+            if (window.app && (now - transfer.lastUiUpdate >= 200 || transfer.chunksReceived === totalChunks)) {
+                transfer.lastUiUpdate = now;
+                const elapsedSec = (now - transfer.startTime) / 1000;
                 const speedMBs = elapsedSec > 0 ? parseFloat((transfer.bytesReceived / (1024 * 1024) / elapsedSec).toFixed(1)) : 0;
+                const speedMbps = elapsedSec > 0 ? parseFloat(((transfer.bytesReceived * 8) / elapsedSec / 1000000).toFixed(1)) : 0;
                 const percent = Math.min(100, Math.round((transfer.bytesReceived / transfer.fileSize) * 100));
 
                 window.app.handleIncomingProgress({
@@ -408,7 +494,8 @@ class WebRTCTransport extends TransferTransport {
                     bytesTransferred: transfer.bytesReceived,
                     percent,
                     speedMBs,
-                    connectionPath: this.connectionPath
+                    speedMbps,
+                    connectionPath: this.connectionClassification
                 });
             }
 
@@ -416,8 +503,7 @@ class WebRTCTransport extends TransferTransport {
             if (transfer.chunksReceived === totalChunks) {
                 console.log(`[WEBRTC] Direct P2P assembly complete for "${transfer.fileName}"! Triggering download...`);
                 const fullBlob = new Blob(transfer.chunks);
-                // Clear array to free memory
-                transfer.chunks = null;
+                transfer.chunks = null; // Free memory
                 
                 this._saveReceivedFile(transfer, fullBlob);
 
