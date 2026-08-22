@@ -108,10 +108,7 @@ vaultManager.on('upload_progress', (info) => {
 vaultManager.on('upload_cancelled', (info) => broadcastWs('transfer_cancelled', info));
 
 vaultManager.on('file_received', (item) => {
-    broadcastWs('file_received', item, (client) => {
-        if (!item.targetPeerId || item.targetPeerId === 'all') return true;
-        return client.peerId === item.targetPeerId || client.peerId === item.senderId;
-    });
+    broadcastWs('file_received', item);
 });
 
 vaultManager.on('file_deleted', (id) => broadcastWs('file_deleted', { id }));
@@ -151,6 +148,8 @@ wss.on('connection', (ws, req) => {
             if (parsed.type === 'register_web_peer' || parsed.type === 'register') {
                 registeredPeerId = parsed.id;
                 ws.peerId = parsed.id; // Attach peerId to socket for targeted routing!
+                
+                const isAlreadyRegistered = discoveryEngine.peers.has(parsed.id);
                 const peer = discoveryEngine.registerWebClient({
                     id: parsed.id,
                     name: parsed.name,
@@ -160,10 +159,14 @@ wss.on('connection', (ws, req) => {
                     ip: clientIp,
                     httpPort: PORT
                 });
+                
                 // Acknowledge registration
                 ws.send(JSON.stringify({ type: 'registered_ack', data: peer }));
-                // Broadcast to all connected clients immediately
-                broadcastWs('peer_discovered', peer);
+                
+                // Broadcast to all other connected clients only if truly new
+                if (!isAlreadyRegistered) {
+                    broadcastWs('peer_discovered', peer);
+                }
             } else if (parsed.type === 'heartbeat') {
                 const peer = discoveryEngine.peers.get(parsed.id);
                 if (peer) {
