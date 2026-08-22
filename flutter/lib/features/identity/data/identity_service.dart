@@ -43,11 +43,18 @@ class IdentityService {
     final deviceId = 'hd_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(100000)}';
     final token = 'hd_tok_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(100000)}';
 
+    String osVer = 'Windows';
+    try {
+      if (!kIsWeb) {
+        osVer = Platform.operatingSystem;
+      }
+    } catch (_) {}
+
     return DeviceIdentity(
       deviceId: deviceId,
       deviceName: defaultName,
       deviceType: type,
-      osVersion: kIsWeb ? 'Web Engine' : Platform.operatingSystemVersion,
+      osVersion: osVer,
       token: token,
     );
   }
