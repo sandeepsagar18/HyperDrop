@@ -15,8 +15,8 @@ class QrConnectionDialog extends StatelessWidget {
   });
 
   String get _qrPayload {
-    // Port 8080 is the built-in standalone server inside the Flutter app
-    return 'http://$localIp:8080/connect?token=${identity.token}&name=${Uri.encodeQueryComponent(identity.deviceName)}';
+    // Open your complete original HyperDrop web app
+    return 'http://$localIp:3000';
   }
 
   @override
