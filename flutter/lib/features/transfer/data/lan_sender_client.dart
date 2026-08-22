@@ -46,42 +46,100 @@ class LanSenderClient {
     yield currentTransfer;
 
     try {
-      // 1. Initialize transfer directly with target peer
       final targetBaseUrl = 'http://$targetIp:$targetPort';
-      try {
-        final startReq = await http.post(
-          Uri.parse('$targetBaseUrl/api/transfer/start'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'fileId': fileId,
-            'fileName': fileName,
-            'fileSize': fileSize,
-            'resumeOffset': 0,
-            'senderName': 'Laptop',
-          }),
-        ).timeout(const Duration(seconds: 4));
+      final bool isMobilePeer = targetPort == 3000 || targetIp != '127.0.0.1';
 
-        if (startReq.statusCode != 200) {
-          // If receiver is on Node web server (port 3000), request via Node endpoint
-          await http.post(
-            Uri.parse('$targetBaseUrl/api/transfer/request'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'fileId': fileId,
-              'fileName': fileName,
-              'fileSize': fileSize,
-              'senderName': 'Laptop',
-              'targetPeerIp': targetIp,
-            }),
-          ).timeout(const Duration(seconds: 3));
+      // 1. If destination is a mobile phone (web client), ingest into local vault so phone web socket immediately receives it
+      if (isMobilePeer) {
+        currentTransfer = currentTransfer.copyWith(
+          status: TransferStatus.transferring,
+          bytesTransferred: 0,
+        );
+        yield currentTransfer;
+
+        final chunkSize = customChunkSize ?? defaultChunkSize;
+        final totalChunks = (fileSize / chunkSize).ceil().clamp(1, 999999);
+        final raf = await file.open(mode: FileMode.read);
+        
+        int bytesTransferred = 0;
+        final startTime = DateTime.now();
+        var lastCheckTime = startTime;
+        var lastCheckBytes = 0;
+
+        for (int i = 0; i < totalChunks; i++) {
+          if (_cancelledTransferIds.contains(fileId)) {
+            await raf.close();
+            currentTransfer = currentTransfer.copyWith(
+              status: TransferStatus.cancelled,
+              speedMBs: 0.0,
+              speedMbps: 0.0,
+              errorMessage: 'Transfer cancelled by user',
+              endTime: DateTime.now(),
+            );
+            yield currentTransfer;
+            return;
+          }
+
+          final offset = i * chunkSize;
+          final end = min(offset + chunkSize, fileSize);
+          final currentChunkLen = end - offset;
+
+          await raf.setPosition(offset);
+          final chunkBytes = await raf.read(currentChunkLen);
+
+          final client = HttpClient();
+          client.connectionTimeout = const Duration(seconds: 4);
+
+          final uri = Uri.parse('http://127.0.0.1:3000/api/vault/upload-chunk');
+          final req = await client.postUrl(uri);
+          req.headers.add('x-file-id', fileId);
+          req.headers.add('x-file-name', Uri.encodeComponent(fileName));
+          req.headers.add('x-file-size', fileSize.toString());
+          req.headers.add('x-chunk-index', i.toString());
+          req.headers.add('x-total-chunks', totalChunks.toString());
+          req.headers.add('x-chunk-offset', offset.toString());
+          req.headers.add('x-chunk-start', offset.toString());
+          req.headers.add('x-sender-name', Uri.encodeComponent('Laptop'));
+          req.add(chunkBytes);
+
+          final res = await req.close();
+          bytesTransferred += currentChunkLen;
+
+          final now = DateTime.now();
+          final deltaMs = now.difference(lastCheckTime).inMilliseconds;
+          if (deltaMs >= 100 || bytesTransferred == fileSize) {
+            final deltaBytes = bytesTransferred - lastCheckBytes;
+            final speedBytesPerSec = deltaMs > 0 ? (deltaBytes / (deltaMs / 1000.0)) : 0.0;
+            final speedMBs = speedBytesPerSec / (1024 * 1024);
+            final speedMbps = speedMBs * 8;
+            final remBytes = fileSize - bytesTransferred;
+            final etaSec = speedBytesPerSec > 0 ? (remBytes / speedBytesPerSec).ceil() : 0;
+
+            currentTransfer = currentTransfer.copyWith(
+              bytesTransferred: bytesTransferred,
+              speedMBs: speedMBs,
+              speedMbps: speedMbps,
+              etaSeconds: etaSec,
+            );
+            yield currentTransfer;
+
+            lastCheckTime = now;
+            lastCheckBytes = bytesTransferred;
+          }
         }
-      } catch (_) {}
 
-      currentTransfer = currentTransfer.copyWith(
-        status: TransferStatus.transferring,
-        bytesTransferred: 0,
-      );
-      yield currentTransfer;
+        await raf.close();
+
+        currentTransfer = currentTransfer.copyWith(
+          status: TransferStatus.completed,
+          bytesTransferred: fileSize,
+          speedMBs: 0.0,
+          speedMbps: 0.0,
+          endTime: DateTime.now(),
+        );
+        yield currentTransfer;
+        return;
+      }
 
       // 2. High-Speed Direct Chunk Streaming
       final chunkSize = customChunkSize ?? defaultChunkSize;
