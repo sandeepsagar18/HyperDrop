@@ -132,20 +132,11 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
     // 2. Discovered Peers
     router.get('/peers', (req, res) => {
         const clientIp = req.ip.replace('::ffff:', '');
-        const hostPeer = {
-            id: discoveryEngine.deviceId,
-            name: discoveryEngine.deviceName,
-            deviceType: discoveryEngine.deviceType,
-            osType: discoveryEngine.osType,
-            avatar: discoveryEngine.avatar,
-            ip: networkMonitor.currentIp,
-            httpPort: discoveryEngine.httpPort,
-            url: `http://${networkMonitor.currentIp}:${discoveryEngine.httpPort}`,
-            isHost: true,
-            lastSeen: Date.now()
-        };
+        const rawPeers = discoveryEngine.getPeers();
+        
+        // Return only remote peers, excluding host itself to avoid duplicate 'You' nodes
+        const peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== '127.0.0.1');
 
-        const peers = [hostPeer, ...discoveryEngine.getPeers()];
         res.json({
             success: true,
             peers
