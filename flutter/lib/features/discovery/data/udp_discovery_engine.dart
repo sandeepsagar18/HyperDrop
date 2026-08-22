@@ -30,42 +30,18 @@ class UdpDiscoveryEngine {
     if (_isListening) return;
 
     try {
-      _socket = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        defaultDiscoveryPort,
-        reuseAddress: true,
-        reusePort: !Platform.isWindows,
-      );
-
-      _socket?.broadcastEnabled = true;
       _isListening = true;
-
-      _socket?.listen((RawSocketEvent event) {
-        if (event == RawSocketEvent.read) {
-          final datagram = _socket?.receive();
-          if (datagram != null) {
-            _handleIncomingBeacon(datagram.data, datagram.address.address);
-          }
-        }
-      });
-
-      // Broadcast presence every 2 seconds
-      _beaconTimer = Timer.periodic(const Duration(seconds: 2), (_) => broadcastPresence());
-      broadcastPresence();
 
       // Clean up stale peers every 4 seconds (inactive for >15s)
       _cleanupTimer = Timer.periodic(const Duration(seconds: 4), (_) => _cleanupStalePeers());
 
-      // Poll Node server local peers API (port 3000) every 2 seconds to aggregate web peers
+      // Poll Node server local peers API (port 3000) every 2 seconds to aggregate only verified connected peers
       _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pollLocalNodeServerPeers());
       _pollLocalNodeServerPeers();
 
-      debugPrint('[DISCOVERY] UDP & Node Discovery engine active on port $defaultDiscoveryPort');
+      debugPrint('[DISCOVERY] QR-Only Verified Discovery engine active.');
     } catch (e) {
-      debugPrint('[DISCOVERY] Failed to bind UDP discovery port: $e');
-      // If UDP bind failed, still start polling Node server
-      _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pollLocalNodeServerPeers());
-      _pollLocalNodeServerPeers();
+      debugPrint('[DISCOVERY] Discovery init error: $e');
     }
   }
 

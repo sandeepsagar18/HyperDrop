@@ -45,17 +45,10 @@ class DiscoveryEngine extends EventEmitter {
                 this.socket.setBroadcast(true);
             } catch (e) {}
             const address = this.socket.address();
-            console.log(`[DISCOVERY] UDP Peer Discovery listening on ${address.address}:${address.port}`);
+            console.log(`[DISCOVERY] QR-Only Discovery listening on ${address.address}:${address.port}`);
             this.isRunning = true;
 
-            // 1. Broadcast beacons periodically
-            this._broadcastBeacon();
-            this.beaconTimer = setInterval(() => this._broadcastBeacon(), BEACON_INTERVAL_MS);
-
-            // 2. ARP scanning disabled — only connect verified paired devices (QR / Web link / Beacon)
-            // this._scanArpAndSubnet();
-
-            // 3. Stale peer cleanup
+            // Stale peer cleanup
             this.cleanupTimer = setInterval(() => this._cleanupStalePeers(), 3000);
         });
 
