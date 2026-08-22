@@ -819,8 +819,10 @@ class HyperDropApp {
             const res = await fetch('/api/peers');
             const data = await res.json();
             if (data.success) {
+                const activeIds = new Set();
                 data.peers.forEach(p => {
                     if (p.id !== this.clientId) {
+                        activeIds.add(p.id);
                         const isNew = !this.peers.has(p.id);
                         this.peers.set(p.id, p);
                         if (isNew) {
@@ -828,6 +830,15 @@ class HyperDropApp {
                         }
                     }
                 });
+
+                // Remove peers that have disconnected
+                for (const id of Array.from(this.peers.keys())) {
+                    if (!activeIds.has(id)) {
+                        this.peers.delete(id);
+                        this.selectedPeerIds.delete(id);
+                    }
+                }
+
                 this.renderRadarOrbit();
             }
         } catch (e) {}
