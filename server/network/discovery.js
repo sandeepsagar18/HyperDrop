@@ -13,7 +13,20 @@ class DiscoveryEngine extends EventEmitter {
     constructor(deviceInfo = {}) {
         super();
         this.deviceId = deviceInfo.id || `hd_${Math.random().toString(36).substring(2, 9)}`;
-        this.deviceName = deviceInfo.name || os.hostname() || 'Windows Laptop';
+        
+        let dynamicName = 'Windows PC';
+        try {
+            const user = os.userInfo ? os.userInfo().username : (process.env.USERNAME || process.env.USER);
+            if (user && user.toLowerCase() !== 'user') {
+                dynamicName = `${user}'s PC`;
+            } else if (os.hostname()) {
+                dynamicName = os.hostname();
+            }
+        } catch (_) {
+            dynamicName = os.hostname() || 'Windows PC';
+        }
+
+        this.deviceName = deviceInfo.name || dynamicName;
         this.deviceType = deviceInfo.type || (os.platform() === 'win32' || os.platform() === 'darwin' || os.platform() === 'linux' ? 'laptop' : 'phone');
         this.osType = os.type() + ' ' + os.release();
         this.httpPort = deviceInfo.httpPort || 3000;

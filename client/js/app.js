@@ -54,11 +54,17 @@ class HyperDropApp {
             const data = await res.json();
             if (data.success) {
                 this.systemStatus = data;
+                
+                // If running in browser on the laptop itself and no custom name is stored, adopt host PC name
+                if (this.clientType === 'laptop' && !localStorage.getItem('hyperdrop_custom_name') && data.deviceName) {
+                    this.clientName = data.deviceName;
+                }
+
                 const hostLabel = document.getElementById('host-device-label');
                 const hostIcon = document.getElementById('host-device-icon');
                 
-                hostLabel.textContent = `You (${this.clientName})`;
-                hostIcon.className = this.clientType === 'phone' ? 'fa-solid fa-mobile-screen-button' : 'fa-solid fa-laptop';
+                if (hostLabel) hostLabel.textContent = `You (${this.clientName})`;
+                if (hostIcon) hostIcon.className = this.clientType === 'phone' ? 'fa-solid fa-mobile-screen-button' : 'fa-solid fa-laptop';
             }
         } catch (e) {
             console.error('Failed to fetch status:', e);
