@@ -144,6 +144,21 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
+  // Explicitly set Big & Small window icons for Windows taskbar and titlebar
+  HICON icon_big = (HICON)LoadImage(
+      GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON,
+      GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
+  HICON icon_small = (HICON)LoadImage(
+      GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON,
+      GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+
+  if (icon_big) {
+    SendMessage(window, WM_SETICON, ICON_BIG, (LPARAM)icon_big);
+  }
+  if (icon_small) {
+    SendMessage(window, WM_SETICON, ICON_SMALL, (LPARAM)icon_small);
+  }
+
   UpdateTheme(window);
 
   return OnCreate();
