@@ -1160,7 +1160,7 @@ textarea:focus {
     letter-spacing: 0.5px;
 }
 
-/* Responsive */
+/* Responsive Mobile & Tablet Layouts */
 @media (max-width: 1100px) {
     .dashboard-cards-container {
         grid-template-columns: 1fr;
@@ -1168,5 +1168,63 @@ textarea:focus {
     .modes-inline-list {
         flex-direction: column;
         align-items: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .top-nav-bar {
+        padding: 0 12px;
+        height: 60px;
+    }
+    .top-center-controls {
+        gap: 6px;
+    }
+    .top-center-controls .pill-btn {
+        padding: 8px 10px;
+        min-width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .top-center-controls .pill-btn .btn-text {
+        display: none !important;
+    }
+    .top-center-controls .pill-btn i {
+        display: inline-block !important;
+        width: 16px !important;
+        height: 16px !important;
+        font-size: 16px;
+        margin: 0;
+    }
+    .orbit-arena {
+        height: 220px;
+    }
+    .dashboard-cards-container {
+        padding: 12px 10px;
+        gap: 16px;
+    }
+    .app-info-footer-clean {
+        margin: 16px 10px 40px !important;
+        padding: 16px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .brand-name {
+        font-size: 18px;
+    }
+    .orbit-arena {
+        height: 200px;
+    }
+    .dashboard-card {
+        padding: 14px;
+    }
+    .dropzone-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+    .btn-pill-choice {
+        width: 100%;
     }
 }

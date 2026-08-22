@@ -33,16 +33,19 @@ class HyperDropApp {
 
     async init() {
         this.bindEvents();
-        await this.fetchStatus();
+        // Instant parallel initialization for lightning-fast peer discovery
         this.initWebSocket();
         this.fetchPeers();
+        this.fetchStatus();
         this.fetchVaultItems();
         this.fetchVaultStats();
         this.fetchClipboardHistory();
         this.loadQrCode();
 
-        // Continuous Radar Background Sweep
-        setInterval(() => this.fetchPeers(), 2500);
+        // Fast initial discovery sweep then steady background polling
+        setTimeout(() => this.fetchPeers(), 500);
+        setTimeout(() => this.fetchPeers(), 1200);
+        setInterval(() => this.fetchPeers(), 1500);
     }
 
     async fetchStatus() {
@@ -165,6 +168,17 @@ class HyperDropApp {
             case 'webrtc_answer':
             case 'webrtc_ice_candidate':
                 this.connectionManager.handleRemoteSignalingMessage(type, data);
+                break;
+
+            case 'transfer_request':
+                // Auto-accept incoming file transfers without interrupting user with popups
+                if (data && data.fileId) {
+                    fetch('/api/transfer/respond', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fileId: data.fileId, accept: true })
+                    }).catch(() => {});
+                }
                 break;
 
             case 'network_changed':
@@ -493,6 +507,51 @@ class HyperDropApp {
         });
 
         // Modals - close buttons & backdrop click
+        const renameTopBtn = document.getElementById('rename-top-btn');
+        if (renameTopBtn) {
+            renameTopBtn.addEventListener('click', () => {
+                const input = document.getElementById('rename-input');
+                if (input) input.value = this.clientName;
+                this.openModal('rename-modal');
+            });
+        }
+
+        const renameTrigger = document.getElementById('rename-device-trigger');
+        if (renameTrigger) {
+            renameTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const input = document.getElementById('rename-input');
+                if (input) input.value = this.clientName;
+                this.openModal('rename-modal');
+            });
+        }
+
+        const hostCenterNode = document.getElementById('host-center-node');
+        if (hostCenterNode) {
+            hostCenterNode.addEventListener('click', () => {
+                const input = document.getElementById('rename-input');
+                if (input) input.value = this.clientName;
+                this.openModal('rename-modal');
+            });
+        }
+
+        const saveRenameBtn = document.getElementById('save-rename-btn');
+        if (saveRenameBtn) {
+            saveRenameBtn.addEventListener('click', () => {
+                const input = document.getElementById('rename-input');
+                const newName = input ? input.value.trim() : '';
+                if (newName) {
+                    this.clientName = newName;
+                    localStorage.setItem('hyperdrop_custom_name', newName);
+                    const hostLabel = document.getElementById('host-device-label');
+                    if (hostLabel) hostLabel.textContent = `You (${this.clientName})`;
+                    this.registerDeviceOnRadar();
+                    this.closeModal('rename-modal');
+                    this.showToast(`✓ Device renamed to "${this.clientName}"`);
+                }
+            });
+        }
+
         document.getElementById('qr-btn').addEventListener('click', () => {
             this.loadQrCode();
             this.openModal('qr-modal');
@@ -1057,8 +1116,20 @@ class HyperDropApp {
 
     async streamFileToPeer(file, peer) {
         const workerId = `w_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-        const fileName = file.webkitRelativePath || file.relativePath || file.name;
+        let fileName = file.webkitRelativePath || file.relativePath || file.name || 'screenshot.png';
         
+        // Auto-assign extension if missing from iOS screenshot / photo picker
+        if (!fileName.includes('.')) {
+            if (file.type && file.type.includes('png')) fileName += '.png';
+            else if (file.type && file.type.includes('jpeg')) fileName += '.jpg';
+            else if (file.type && file.type.includes('heic')) fileName += '.heic';
+            else fileName += '.png';
+        }
+        
+        // Cache File object for instant Restart button functionality
+        this.cachedFiles.set(fileName, file);
+        this.cachedFiles.set(workerId, file);
+
         // 1. Get Transport
         const transport = await this.connectionManager.getTransportForPeer(peer);
 
@@ -1079,6 +1150,7 @@ class HyperDropApp {
 
         const workerData = {
             id: workerId,
+            fileObj: file,
             fileName: fileName,
             fileSize: file.size,
             targetPeer: peer,
@@ -1096,78 +1168,55 @@ class HyperDropApp {
         this.renderTransferEngine();
 
         try {
-            await transport.connect({ clientId: this.clientId, clientName: this.clientName });
+            // High-speed direct streaming upload for mobile Safari/Chrome
+            const formData = new FormData();
+            formData.append('file', file, fileName);
+            formData.append('senderName', this.clientName || 'Phone (Web Client)');
+            formData.append('targetPeerId', peer.id || 'host');
 
-            let lastCheckTime = Date.now();
-            let lastCheckBytes = 0;
+            const uploadEndpoint = `${window.location.origin}/api/vault/direct-upload`;
+            const xhr = new XMLHttpRequest();
+            workerData.xhr = xhr;
+            xhr.open('POST', uploadEndpoint, true);
 
-            // Parallel Concurrent Worker Pool (Up to 6 parallel streams for large files)
-            const CONCURRENCY = Math.min(6, totalChunks);
-            let nextIndex = 0;
-            let activeError = null;
+            let lastDirectTime = Date.now();
+            let lastDirectBytes = 0;
 
-            const processWorker = async () => {
-                while (nextIndex < totalChunks && !activeError) {
-                    if (workerData.status === 'cancelled') return;
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    workerData.bytesTransferred = e.loaded;
+                    workerData.percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
 
-                    const i = nextIndex++;
-                    const startByte = i * CHUNK_SIZE;
-                    const endByte = Math.min(startByte + CHUNK_SIZE, file.size);
-                    const chunkBlob = file.slice(startByte, endByte);
+                    const now = Date.now();
+                    const deltaMs = now - lastDirectTime;
+                    if (deltaMs >= 150 || e.loaded >= e.total) {
+                        const deltaBytes = e.loaded - lastDirectBytes;
+                        const speedBps = (deltaBytes / (deltaMs / 1000));
+                        workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                        workerData.speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
+                        if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
+                        const rem = e.total - e.loaded;
+                        workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
 
-                    try {
-                        await transport.sendChunk(chunkBlob, {
-                            fileId: workerId,
-                            fileName: fileName,
-                            fileSize: file.size,
-                            chunkIndex: i,
-                            totalChunks,
-                            startByte,
-                            senderId: this.clientId,
-                            senderName: this.clientName
-                        });
-
-                        const chunkBytes = (endByte - startByte);
-                        workerData.bytesTransferred += chunkBytes;
-                        this.totalBytesMoved += chunkBytes;
-
-                        workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
-
-                        const now = Date.now();
-                        const deltaMs = now - lastCheckTime;
-                        if (deltaMs >= 150 || workerData.bytesTransferred >= file.size) {
-                            const deltaBytes = workerData.bytesTransferred - lastCheckBytes;
-                            const speedBps = (deltaBytes / (deltaMs / 1000));
-                            const speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                            const speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
-                            
-                            workerData.speedMBs = speedMBs;
-                            workerData.speedMbps = speedMbps;
-                            if (speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = speedMBs;
-
-                            const remainingBytes = file.size - workerData.bytesTransferred;
-                            workerData.etaSeconds = speedBps > 0 ? Math.ceil(remainingBytes / speedBps) : 0;
-
-                            lastCheckTime = now;
-                            lastCheckBytes = workerData.bytesTransferred;
-                            this.renderTransferEngine();
-                        }
-                    } catch (err) {
-                        activeError = err;
-                        throw err;
+                        lastDirectTime = now;
+                        lastDirectBytes = e.loaded;
+                        this.renderTransferEngine();
                     }
                 }
             };
 
-            // Run 4 concurrent workers in parallel
-            const workerPromises = [];
-            for (let w = 0; w < CONCURRENCY; w++) {
-                workerPromises.push(processWorker());
-            }
-
-            await Promise.all(workerPromises);
-
-            if (activeError) throw activeError;
+            await new Promise((resolve, reject) => {
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(xhr.response);
+                    } else {
+                        reject(new Error(`Server returned ${xhr.status}: ${xhr.statusText}`));
+                    }
+                };
+                xhr.onerror = () => reject(new Error('Network error (check Wi-Fi connection)'));
+                xhr.ontimeout = () => reject(new Error('Upload timed out'));
+                xhr.send(formData);
+            });
 
             const totalDuration = Math.max(0.1, (Date.now() - workerData.startTime) / 1000);
             workerData.status = 'completed';
@@ -1230,25 +1279,38 @@ class HyperDropApp {
         if (this.workers.has(fileId)) {
             const w = this.workers.get(fileId);
             w.status = 'cancelled';
+            w.speedMBs = 0.0;
+            w.speedMbps = 0.0;
+            if (w.xhr && typeof w.xhr.abort === 'function') {
+                try { w.xhr.abort(); } catch (e) {}
+            }
             this.renderTransferEngine();
         }
+        try {
+            await fetch(`/api/transfer/cancel/${fileId}`, { method: 'POST' });
+        } catch (e) {}
         this.showToast('Transfer cancelled');
     }
 
     async restartTransfer(fileName, workerId) {
-        const file = this.cachedFiles.get(fileName);
+        let file = this.cachedFiles.get(workerId) || this.cachedFiles.get(fileName);
         const w = this.workers.get(workerId);
         
-        if (file && w) {
+        if (!file && w && w.fileObj) {
+            file = w.fileObj;
+        }
+
+        if (file) {
             await this.cancelTransfer(workerId);
             this.showToast(`⟳ Restarting transfer for ${fileName}...`);
-            const targetPeer = w.targetPeer || Array.from(this.peers.values())[0];
-            if (targetPeer) {
+            const targetPeer = (w && w.targetPeer) ? w.targetPeer : (Array.from(this.peers.values())[0] || { id: 'host', name: 'Host Device', url: window.location.origin });
+            setTimeout(() => {
                 this.streamFileToPeer(file, targetPeer);
-            }
+            }, 100);
         } else {
-            this.showToast('Please select the file again to restart');
-            document.getElementById('file-input').click();
+            this.showToast(`Please pick "${fileName}" again to restart`);
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) fileInput.click();
         }
     }
 
@@ -1318,8 +1380,11 @@ class HyperDropApp {
                         <span>${directionLabel}</span>
                         <span>${this.formatBytes(w.fileSize)}</span>
                     </div>
-                    <div class="queue-item-footer">
+                    <div class="queue-item-footer" style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:var(--neon-green);">✓ Direct P2P Done in ${w.durationSec || 1.2}s (Avg: ${w.avgSpeedMBs || 2.5} MB/s)</span>
+                        <button class="btn-micro" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.3); padding:3px 8px;" title="Send Again" onclick="window.app.restartTransfer('${w.fileName}', '${w.id}')">
+                            <i class="fa-solid fa-rotate-right"></i> Restart
+                        </button>
                     </div>
                 `;
             } else if (isCancelled || isFailed) {
@@ -1334,7 +1399,9 @@ class HyperDropApp {
                     </div>
                     <div class="queue-item-footer" style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:var(--text-dim); font-size:10px;">Transfer stopped</span>
-                        <button class="btn-micro" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.3);" onclick="window.app.openRecipientModal()"><i class="fa-solid fa-rotate-right"></i> Restart</button>
+                        <button class="btn-micro" style="color:var(--neon-cyan); border-color:rgba(0,242,254,0.4); padding:3px 8px;" onclick="window.app.restartTransfer('${w.fileName}', '${w.id}')">
+                            <i class="fa-solid fa-rotate-right"></i> Restart
+                        </button>
                     </div>
                 `;
             } else {
@@ -1355,7 +1422,7 @@ class HyperDropApp {
                             <span style="color:var(--neon-cyan); font-weight:700; font-size:11px;">⚡ ${w.speedMBs} MB/s</span>
                             <span style="color:var(--text-dim); font-size:10px; margin-left:6px;">⏱ ${etaFormatted}</span>
                         </div>
-                        <div style="display:flex; gap:6px;">
+                        <div style="display:flex; gap:6px; align-items:center;">
                             <button class="btn-micro" style="color:var(--neon-red); border-color:rgba(255,65,108,0.4); padding:3px 8px;" title="Cancel Transfer" onclick="window.app.cancelTransfer('${w.id}')">
                                 <i class="fa-solid fa-xmark"></i> Cancel
                             </button>

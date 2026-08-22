@@ -62,7 +62,8 @@ class LocalTransport extends TransferTransport {
     async sendChunk(chunkBlob, chunkMeta) {
         const { fileId, fileName, fileSize, chunkIndex, totalChunks, startByte, senderId, senderName } = chunkMeta;
 
-        const uploadUrl = `/api/vault/upload-chunk?fileId=${encodeURIComponent(fileId)}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id)}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
+        const baseUrl = (this.peer && this.peer.url && this.peer.url.startsWith('http')) ? this.peer.url : '';
+        const uploadUrl = `${baseUrl}/api/vault/upload-chunk?fileId=${encodeURIComponent(fileId)}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id)}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
 
         let chunkUploaded = false;
         let retryCount = 0;

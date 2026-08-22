@@ -27,7 +27,21 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
     // Storage for direct uploads from web browser
     const upload = multer({ dest: TEMP_UPLOADS_DIR });
 
-    // 0. Handshake Protocol
+    // 0. Handshake & Transfer Authorization Request
+    router.post('/transfer/request', (req, res) => {
+        const { fileId, fileName, fileSize, senderName, targetPeerIp } = req.body;
+        if (discoveryEngine.emit) {
+            discoveryEngine.emit('transfer_requested', {
+                fileId: fileId || `f_${Date.now()}`,
+                fileName: fileName || 'Unknown File',
+                fileSize: fileSize || 0,
+                senderName: senderName || 'Nearby Laptop',
+                targetPeerIp
+            });
+        }
+        res.json({ accepted: true, message: 'Transfer request prompted' });
+    });
+
     router.post('/handshake', (req, res) => {
         const { deviceId, deviceName, protocolVersion, appType } = req.body;
         const callerId = deviceId || `client_${req.ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -117,9 +131,24 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
 
     // 2. Discovered Peers
     router.get('/peers', (req, res) => {
+        const clientIp = req.ip.replace('::ffff:', '');
+        const hostPeer = {
+            id: discoveryEngine.deviceId,
+            name: discoveryEngine.deviceName,
+            deviceType: discoveryEngine.deviceType,
+            osType: discoveryEngine.osType,
+            avatar: discoveryEngine.avatar,
+            ip: networkMonitor.currentIp,
+            httpPort: discoveryEngine.httpPort,
+            url: `http://${networkMonitor.currentIp}:${discoveryEngine.httpPort}`,
+            isHost: true,
+            lastSeen: Date.now()
+        };
+
+        const peers = [hostPeer, ...discoveryEngine.getPeers()];
         res.json({
             success: true,
-            peers: discoveryEngine.getPeers()
+            peers
         });
     });
 

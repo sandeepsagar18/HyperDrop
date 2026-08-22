@@ -85,6 +85,7 @@ discoveryEngine.on('peer_discovered', (peer) => broadcastWs('peer_discovered', p
 discoveryEngine.on('peer_lost', (peer) => broadcastWs('peer_lost', peer));
 discoveryEngine.on('peer_updated', (peer) => broadcastWs('peer_updated', peer));
 discoveryEngine.on('device_renamed', (data) => broadcastWs('device_renamed', data));
+discoveryEngine.on('transfer_requested', (data) => broadcastWs('transfer_request', data));
 discoveryEngine.on('clipboard_synced', (item) => {
     broadcastWs('clipboard_synced', item, (client) => {
         if (!item.targetPeerIds || item.targetPeerIds.includes('all')) return true;

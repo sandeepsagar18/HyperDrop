@@ -43,12 +43,12 @@ class VaultManager extends EventEmitter {
 
     categorizeFile(fileName) {
         const ext = path.extname(fileName).toLowerCase().replace('.', '');
-        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
-        const videoExts = ['mp4', 'mkv', 'mov', 'avi', 'wmv', 'flv', 'webm', '3gp'];
-        const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma'];
-        const docExts = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'md'];
-        const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso'];
-        const codeExts = ['js', 'ts', 'py', 'html', 'css', 'json', 'cpp', 'c', 'h', 'java', 'rs', 'go', 'php'];
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif', 'tiff', 'tif', 'raw', 'cr2', 'nef', 'dng'];
+        const videoExts = ['mp4', 'mkv', 'mov', 'avi', 'wmv', 'flv', 'webm', '3gp', 'm4v', 'ts', 'mts', 'vob', 'ogv'];
+        const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'opus', 'aiff', 'alac', 'mid', 'midi'];
+        const docExts = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'md', 'epub', 'mobi', 'pages', 'numbers', 'key'];
+        const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso', 'xz', 'apk', 'dmg', 'pkg', 'deb', 'rpm', 'exe', 'msi'];
+        const codeExts = ['js', 'ts', 'py', 'html', 'css', 'json', 'cpp', 'c', 'h', 'java', 'rs', 'go', 'php', 'dart', 'sh', 'bat', 'ps1', 'sql', 'xml', 'yaml', 'yml'];
 
         if (imageExts.includes(ext)) return 'image';
         if (videoExts.includes(ext)) return 'video';

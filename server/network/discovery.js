@@ -52,9 +52,8 @@ class DiscoveryEngine extends EventEmitter {
             this._broadcastBeacon();
             this.beaconTimer = setInterval(() => this._broadcastBeacon(), BEACON_INTERVAL_MS);
 
-            // 2. Active Wireless Subnet & ARP Scanning for verified HyperDrop peers only
-            this._scanArpAndSubnet();
-            this.arpScanTimer = setInterval(() => this._scanArpAndSubnet(), ARP_SCAN_INTERVAL_MS);
+            // 2. ARP scanning disabled — only connect verified paired devices (QR / Web link / Beacon)
+            // this._scanArpAndSubnet();
 
             // 3. Stale peer cleanup
             this.cleanupTimer = setInterval(() => this._cleanupStalePeers(), 3000);
@@ -116,13 +115,17 @@ class DiscoveryEngine extends EventEmitter {
             // 2. ARP-based discovery
             const connectedIps = await getArpConnectedDevices();
             for (const ip of connectedIps) {
-                if (ownIps.includes(ip)) continue;
+                if (ownIps.includes(ip) || ip === '127.0.0.1') continue;
                 this._probeAndRegisterPeer(ip);
             }
         } catch (err) {}
     }
 
     async _probeAndRegisterPeer(ip) {
+        const interfaces = getNetworkInterfaces();
+        const ownIps = interfaces.map(i => i.address);
+        if (ownIps.includes(ip) || ip === '127.0.0.1') return;
+
         const existingId = Array.from(this.peers.keys()).find(k => this.peers.get(k).ip === ip);
         if (existingId) {
             const peer = this.peers.get(existingId);
@@ -190,7 +193,9 @@ class DiscoveryEngine extends EventEmitter {
     _handleIncomingPacket(msg, rinfo) {
         try {
             const data = JSON.parse(msg.toString('utf8'));
-            if (!data || data.type !== 'HYPERDROP_BEACON' || data.id === this.deviceId) {
+            const interfaces = getNetworkInterfaces();
+            const ownIps = interfaces.map(i => i.address);
+            if (!data || data.type !== 'HYPERDROP_BEACON' || data.id === this.deviceId || ownIps.includes(rinfo.address) || rinfo.address === '127.0.0.1') {
                 return;
             }
 
