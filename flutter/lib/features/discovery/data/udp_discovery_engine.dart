@@ -30,16 +30,37 @@ class UdpDiscoveryEngine {
     if (_isListening) return;
 
     try {
+      _socket = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        defaultDiscoveryPort,
+        reuseAddress: true,
+        reusePort: !Platform.isWindows,
+      );
+
+      _socket?.broadcastEnabled = true;
       _isListening = true;
+
+      _socket?.listen((RawSocketEvent event) {
+        if (event == RawSocketEvent.read) {
+          final datagram = _socket?.receive();
+          if (datagram != null) {
+            _handleIncomingBeacon(datagram.data, datagram.address.address);
+          }
+        }
+      });
+
+      // Broadcast presence every 2 seconds to discover other laptops
+      _beaconTimer = Timer.periodic(const Duration(seconds: 2), (_) => broadcastPresence());
+      broadcastPresence();
 
       // Clean up stale peers every 4 seconds (inactive for >15s)
       _cleanupTimer = Timer.periodic(const Duration(seconds: 4), (_) => _cleanupStalePeers());
 
-      // Poll Node server local peers API (port 3000) every 2 seconds to aggregate only verified connected peers
+      // Poll Node server local peers API (port 3000) every 2 seconds if running
       _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _pollLocalNodeServerPeers());
       _pollLocalNodeServerPeers();
 
-      debugPrint('[DISCOVERY] QR-Only Verified Discovery engine active.');
+      debugPrint('[DISCOVERY] Active UDP & Node Discovery listening on port $defaultDiscoveryPort');
     } catch (e) {
       debugPrint('[DISCOVERY] Discovery init error: $e');
     }
@@ -56,7 +77,7 @@ class UdpDiscoveryEngine {
         for (final p in peersList) {
           final ip = p['ip'] as String?;
           final id = p['id'] as String? ?? p['deviceId'] as String? ?? 'peer_${ip?.replaceAll('.', '_')}';
-          if (ip == null || ip == '127.0.0.1' || ip == '192.168.29.137' || id == identity.deviceId) continue;
+          if (ip == null || ip == '127.0.0.1' || id == identity.deviceId) continue;
 
           final name = p['name'] as String? ?? p['deviceName'] as String? ?? 'Mobile / Peer';
           final port = (p['httpPort'] as num?)?.toInt() ?? 3000;
