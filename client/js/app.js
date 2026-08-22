@@ -233,9 +233,6 @@ class HyperDropApp {
                 break;
 
             case 'file_received':
-                if (data.targetPeerId && data.targetPeerId !== 'all' && data.targetPeerId !== this.clientId && data.senderId !== this.clientId) {
-                    break; // Ignore files sent to another device!
-                }
                 if (this.workers.has(data.id)) {
                     const w = this.workers.get(data.id);
                     w.status = 'completed';
@@ -253,7 +250,7 @@ class HyperDropApp {
                 }
                 this.fetchVaultItems();
                 this.fetchVaultStats();
-                this.showToast(`📥 Received: ${data.originalName}`);
+                this.showToast(`📥 Received: ${data.originalName || data.fileName || 'New File'}`);
                 break;
 
             case 'file_deleted':
