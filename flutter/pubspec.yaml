@@ -1,4 +1,4 @@
-﻿name: hyperdrop_flutter
+name: hyperdrop_flutter
 description: "HyperDrop - Ultra High-Speed Local LAN, Wi-Fi & Hotspot Direct File Transfer"
 publish_to: 'none'
 version: 1.0.0+1
@@ -31,3 +31,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/

@@ -686,12 +686,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           child: Row(
             children: [
-              // EXTREME LEFT: HyperDrop Branding & Subtitle
+              // BRAND & LOGO (LEFT)
               Row(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      'assets/images/app_logo.png',
+                      width: isUltraNarrow ? 22 : (isCompact ? 26 : 30),
+                      height: isUltraNarrow ? 22 : (isCompact ? 26 : 30),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.bolt, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     'HyperDrop',
                     style: TextStyle(
