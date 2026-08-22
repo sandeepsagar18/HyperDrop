@@ -247,78 +247,162 @@ class LanHttpReceiverServer {
 
     final bool tokenValid = queryToken != null && queryToken == identity.token;
 
-    final String html;
-    if (tokenValid) {
-      debugPrint('[LAN SERVER] QR pairing page opened by $querySenderName ($remoteIp)');
-      html = '''<!DOCTYPE html>
+    final String html = '''<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HyperDrop – Paired!</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HyperDrop – File Transfer</title>
   <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{background:#070D18;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px}
-    .card{background:#0E1726;border:1.5px solid #00F2FE;border-radius:20px;padding:32px 28px;max-width:380px;width:100%;text-align:center}
-    .icon{font-size:52px;margin-bottom:16px}
-    h1{font-size:22px;font-weight:900;color:#00F2FE;margin-bottom:8px}
-    .sub{color:#94A3B8;font-size:14px;line-height:1.5;margin-bottom:20px}
-    .info-row{display:flex;justify-content:space-between;align-items:center;background:#131F33;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:13px}
-    .info-row span:first-child{color:#64748B}
-    .info-row span:last-child{color:#fff;font-weight:700}
-    .badge{background:#00E67622;color:#00E676;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;display:inline-block;margin-top:8px}
-    .step{background:#131F33;border-radius:12px;padding:14px;margin-top:20px;text-align:left}
-    .step p{color:#94A3B8;font-size:13px;margin-bottom:6px}
-    .step ol{padding-left:18px;color:#CBD5E1;font-size:13px;line-height:1.8}
+    *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+    body{background:#070D18;color:#fff;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px}
+    .header{display:flex;align-items:center;gap:12px;margin:16px 0 24px;text-align:center}
+    .logo-badge{width:42px;height:42px;background:linear-gradient(135deg,#00f2fe,#4facfe);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+    h1{font-size:22px;font-weight:900;background:linear-gradient(135deg,#00f2fe,#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .card{background:#0E1726;border:1.5px solid #1E293B;border-radius:20px;padding:24px;max-width:440px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+    .status-box{display:flex;align-items:center;justify-content:space-between;background:#131F33;border-radius:12px;padding:12px 16px;margin-bottom:20px}
+    .status-left{display:flex;align-items:center;gap:10px}
+    .status-dot{width:10px;height:10px;background:#00E676;border-radius:50%;box-shadow:0 0 10px #00E676}
+    .pc-name{font-weight:700;font-size:14px;color:#fff}
+    .dropzone{border:2px dashed #00F2FE;border-radius:16px;background:rgba(0,242,254,0.03);padding:36px 20px;text-align:center;cursor:pointer;transition:all 0.2s ease}
+    .dropzone:active{background:rgba(0,242,254,0.1);transform:scale(0.98)}
+    .dropzone-icon{font-size:48px;margin-bottom:12px}
+    .dropzone-title{font-size:16px;font-weight:700;color:#00F2FE;margin-bottom:6px}
+    .dropzone-sub{font-size:12px;color:#94A3B8}
+    .progress-card{background:#131F33;border-radius:14px;padding:16px;margin-top:16px;display:none}
+    .progress-title{display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:8px}
+    .progress-bar-bg{height:8px;background:#1E293B;border-radius:4px;overflow:hidden;margin-bottom:8px}
+    .progress-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#00F2FE,#00E676);transition:width 0.1s linear}
+    .progress-speed{font-size:11px;color:#00E676;font-weight:700}
+    .btn-select{width:100%;margin-top:16px;background:linear-gradient(135deg,#00F2FE,#4FACFE);color:#070D18;font-weight:800;font-size:15px;padding:14px;border:none;border-radius:12px;cursor:pointer}
   </style>
 </head>
 <body>
+  <div class="header">
+    <div class="logo-badge">⚡</div>
+    <h1>HyperDrop</h1>
+  </div>
   <div class="card">
-    <div class="icon">⚡</div>
-    <h1>HyperDrop Paired!</h1>
-    <p class="sub">Your phone is now connected to this PC over your local network.</p>
-    <div class="info-row"><span>Connected PC</span><span>${identity.deviceName}</span></div>
-    <div class="info-row"><span>Your Device</span><span>$querySenderName</span></div>
-    <div class="info-row"><span>PC IP</span><span>$remoteIp ← you</span></div>
-    <div class="info-row"><span>Transfer Port</span><span>${identity.httpPort}</span></div>
-    <span class="badge">✓ Secure LAN Session Active</span>
-    <div class="step">
-      <p><strong style="color:#00F2FE">Next steps:</strong></p>
-      <ol>
-        <li>Open HyperDrop on your phone</li>
-        <li>This PC will appear in "Nearby Devices"</li>
-        <li>Tap it and send files at full LAN speed</li>
-      </ol>
+    <div class="status-box">
+      <div class="status-left">
+        <div class="status-dot"></div>
+        <div>
+          <div class="pc-name">${identity.deviceName}</div>
+          <div style="font-size:11px;color:#94A3B8">Ready to receive files</div>
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#00F2FE;background:rgba(0,242,254,0.1);padding:4px 8px;border-radius:6px">Connected</span>
+    </div>
+
+    <input type="file" id="file-input" multiple style="display:none">
+    <div class="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="dropzone-icon">📤</div>
+      <div class="dropzone-title">Tap to Send Files</div>
+      <div class="dropzone-sub">Photos, Videos, Documents, Any Size</div>
+    </div>
+
+    <button class="btn-select" onclick="document.getElementById('file-input').click()">Choose Files from Phone</button>
+
+    <div class="progress-card" id="progress-card">
+      <div class="progress-title">
+        <span id="file-name">filename.jpg</span>
+        <span id="percent-text">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="progress-speed" id="speed-text">0.0 MB/s</span>
+        <span style="font-size:11px;color:#94A3B8" id="bytes-text">0 / 0 MB</span>
+      </div>
     </div>
   </div>
-</body>
-</html>''';
-    } else {
-      debugPrint('[LAN SERVER] QR connect attempt with invalid token from $remoteIp');
-      html = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HyperDrop – Invalid Token</title>
-  <style>
-    body{background:#070D18;font-family:-apple-system,sans-serif;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh}
-    .card{background:#0E1726;border:1.5px solid #FF5252;border-radius:20px;padding:32px;max-width:360px;width:100%;text-align:center}
-    h1{color:#FF5252;font-size:20px;margin-bottom:12px}
-    p{color:#94A3B8;font-size:14px}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>⚠ Invalid or Expired QR</h1>
-    <p>This QR code is no longer valid. Please generate a new QR from the HyperDrop app on the PC.</p>
-  </div>
-</body>
-</html>''';
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const progressCard = document.getElementById('progress-card');
+    const fileNameEl = document.getElementById('file-name');
+    const percentEl = document.getElementById('percent-text');
+    const fillEl = document.getElementById('progress-fill');
+    const speedEl = document.getElementById('speed-text');
+    const bytesEl = document.getElementById('bytes-text');
+
+    fileInput.addEventListener('change', async (e) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
+
+      for (let i = 0; i < files.length; i++) {
+        await uploadFile(files[i]);
+      }
+    });
+
+    async function uploadFile(file) {
+      progressCard.style.display = 'block';
+      fileNameEl.textContent = file.name;
+      const fileId = 'f_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      const chunkSize = 2 * 1024 * 1024; // 2MB
+      const totalChunks = Math.ceil(file.size / chunkSize) || 1;
+
+      // 1. Start transfer
+      await fetch('/api/transfer/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId, fileName: file.name, fileSize: file.size, resumeOffset: 0 })
+      });
+
+      let transferred = 0;
+      let lastTime = Date.now();
+      let lastBytes = 0;
+
+      for (let c = 0; c < totalChunks; c++) {
+        const start = c * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
+
+        await fetch('/api/transfer/chunk', {
+          method: 'POST',
+          headers: {
+            'x-file-id': fileId,
+            'x-chunk-offset': start.toString()
+          },
+          body: chunk
+        });
+
+        transferred += (end - start);
+        const pct = Math.round((transferred / file.size) * 100);
+        fillEl.style.width = pct + '%';
+        percentEl.textContent = pct + '%';
+        bytesEl.textContent = (transferred/(1024*1024)).toFixed(1) + ' / ' + (file.size/(1024*1024)).toFixed(1) + ' MB';
+
+        const now = Date.now();
+        const deltaMs = now - lastTime;
+        if (deltaMs >= 200 || transferred === file.size) {
+          const speedMBs = ((transferred - lastBytes) / (deltaMs / 1000)) / (1024 * 1024);
+          speedEl.textContent = speedMBs.toFixed(1) + ' MB/s';
+          lastTime = now;
+          lastBytes = transferred;
+        }
+      }
+
+      await fetch('/api/transfer/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId })
+      });
+
+      percentEl.textContent = '✓ Sent!';
+      speedEl.textContent = 'Completed';
+      setTimeout(() => {
+        progressCard.style.display = 'none';
+        fillEl.style.width = '0%';
+      }, 2500);
     }
+  </script>
+</body>
+</html>''';
 
     request.response
-      ..statusCode = tokenValid ? HttpStatus.ok : HttpStatus.forbidden
+      ..statusCode = HttpStatus.ok
       ..headers.contentType = ContentType.html
       ..write(html);
     await request.response.close();

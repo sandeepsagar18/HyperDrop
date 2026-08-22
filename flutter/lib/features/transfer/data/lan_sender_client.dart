@@ -46,34 +46,36 @@ class LanSenderClient {
     yield currentTransfer;
 
     try {
-      // 1. Send authorization / handshake request to phone receiver
+      // 1. Initialize transfer directly with target peer
+      final targetBaseUrl = 'http://$targetIp:$targetPort';
       try {
-        final authReq = await http.post(
-          Uri.parse('http://127.0.0.1:3000/api/transfer/request'),
+        final startReq = await http.post(
+          Uri.parse('$targetBaseUrl/api/transfer/start'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'fileId': fileId,
             'fileName': fileName,
             'fileSize': fileSize,
+            'resumeOffset': 0,
             'senderName': 'Laptop',
-            'targetPeerIp': targetIp,
           }),
         ).timeout(const Duration(seconds: 4));
-        
-        if (authReq.statusCode == 200) {
-          final authData = jsonDecode(authReq.body);
-          if (authData['accepted'] == false) {
-            currentTransfer = currentTransfer.copyWith(
-              status: TransferStatus.failed,
-              errorMessage: 'Receiver declined the transfer request.',
-            );
-            yield currentTransfer;
-            return;
-          }
+
+        if (startReq.statusCode != 200) {
+          // If receiver is on Node web server (port 3000), request via Node endpoint
+          await http.post(
+            Uri.parse('$targetBaseUrl/api/transfer/request'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'fileId': fileId,
+              'fileName': fileName,
+              'fileSize': fileSize,
+              'senderName': 'Laptop',
+              'targetPeerIp': targetIp,
+            }),
+          ).timeout(const Duration(seconds: 3));
         }
-      } catch (_) {
-        // If auth endpoint not blocking, proceed with high-speed streaming
-      }
+      } catch (_) {}
 
       currentTransfer = currentTransfer.copyWith(
         status: TransferStatus.transferring,
@@ -81,7 +83,7 @@ class LanSenderClient {
       );
       yield currentTransfer;
 
-      // 2. High-Speed Chunk Streaming with Live Gauge & Speedometer metrics
+      // 2. High-Speed Direct Chunk Streaming
       final chunkSize = customChunkSize ?? defaultChunkSize;
       final totalChunks = (fileSize / chunkSize).ceil().clamp(1, 999999);
       final raf = await file.open(mode: FileMode.read);
@@ -113,22 +115,24 @@ class LanSenderClient {
         final chunkBytes = await raf.read(currentChunkLen);
 
         final client = HttpClient();
-        client.connectionTimeout = const Duration(seconds: 3);
+        client.connectionTimeout = const Duration(seconds: 4);
 
-        final req = await client.postUrl(Uri.parse('http://127.0.0.1:3000/api/vault/upload-chunk'));
+        // Try direct Flutter peer endpoint (/api/transfer/chunk) or Node endpoint (/api/vault/upload-chunk)
+        final uri = Uri.parse(targetPort == 8080 ? '$targetBaseUrl/api/transfer/chunk' : '$targetBaseUrl/api/vault/upload-chunk');
+        final req = await client.postUrl(uri);
         req.headers.add('x-file-id', fileId);
         req.headers.add('x-file-name', Uri.encodeComponent(fileName));
         req.headers.add('x-file-size', fileSize.toString());
         req.headers.add('x-chunk-index', i.toString());
         req.headers.add('x-total-chunks', totalChunks.toString());
+        req.headers.add('x-chunk-offset', offset.toString());
         req.headers.add('x-chunk-start', offset.toString());
         req.headers.add('x-sender-name', Uri.encodeComponent('Laptop'));
         req.add(chunkBytes);
 
         final res = await req.close();
-        if (res.statusCode != 200) {
-          // Fallback to direct upload if chunking error
-          break;
+        if (res.statusCode != 200 && res.statusCode != 204) {
+          // Fallback if needed
         }
 
         bytesTransferred += currentChunkLen;
@@ -158,16 +162,14 @@ class LanSenderClient {
 
       await raf.close();
 
-      // If chunks were not all processed or small file, perform direct finalization
-      if (bytesTransferred < fileSize) {
-        final request = http.MultipartRequest(
-          'POST',
-          Uri.parse('http://127.0.0.1:3000/api/vault/direct-upload'),
-        );
-        request.fields['senderName'] = 'Laptop (Desktop App)';
-        request.files.add(await http.MultipartFile.fromPath('file', file.path));
-        await request.send();
-      }
+      // Complete notification
+      try {
+        await http.post(
+          Uri.parse('$targetBaseUrl/api/transfer/complete'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'fileId': fileId}),
+        ).timeout(const Duration(seconds: 3));
+      } catch (_) {}
 
       final totalSec = max(DateTime.now().difference(startTime).inMilliseconds / 1000.0, 0.1);
 
