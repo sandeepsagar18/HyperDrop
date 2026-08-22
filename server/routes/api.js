@@ -132,10 +132,29 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
     // 2. Discovered Peers
     router.get('/peers', (req, res) => {
         const clientIp = req.ip.replace('::ffff:', '');
+        const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === networkMonitor.currentIp;
         const rawPeers = discoveryEngine.getPeers();
-        
-        // Return only remote peers, excluding host itself to avoid duplicate 'You' nodes
-        const peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== '127.0.0.1');
+
+        let peers = [];
+        if (isLocalhost) {
+            // For laptop viewing: show only external devices (phone, friend's laptop)
+            peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== '127.0.0.1' && p.ip !== networkMonitor.currentIp);
+        } else {
+            // For remote phone scanning: include the Host Laptop so the phone radar sees this laptop!
+            const hostPeer = {
+                id: discoveryEngine.deviceId,
+                name: discoveryEngine.deviceName,
+                deviceType: discoveryEngine.deviceType,
+                osType: discoveryEngine.osType,
+                avatar: discoveryEngine.avatar,
+                ip: networkMonitor.currentIp,
+                httpPort: discoveryEngine.httpPort,
+                url: `http://${networkMonitor.currentIp}:${discoveryEngine.httpPort}`,
+                isHost: true,
+                lastSeen: Date.now()
+            };
+            peers = [hostPeer, ...rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp)];
+        }
 
         res.json({
             success: true,
