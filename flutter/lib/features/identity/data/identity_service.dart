@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../domain/models/device_identity.dart';
@@ -13,16 +14,29 @@ class IdentityService {
 
   DeviceIdentity _generateIdentity() {
     final rand = Random();
-    final randomSuffix = rand.nextInt(9999).toString().padLeft(4, '0');
     
-    String defaultName = 'Laptop (SandeepSagar18)';
-    DeviceType type = DeviceType.phone;
+    String defaultName = 'Windows Laptop';
+    DeviceType type = DeviceType.laptop;
 
     if (kIsWeb) {
-      defaultName = 'Phone Web Client';
+      defaultName = 'Web Client';
       type = DeviceType.phone;
     } else {
-      defaultName = 'Laptop (SandeepSagar18)';
+      try {
+        final hostname = Platform.localHostname;
+        final username = Platform.environment['USERNAME'] ?? 
+                         Platform.environment['USER'] ?? 
+                         Platform.environment['LOGNAME'];
+        if (username != null && username.isNotEmpty && username.toLowerCase() != 'user') {
+          defaultName = '$username\'s PC';
+        } else if (hostname.isNotEmpty) {
+          defaultName = hostname;
+        } else {
+          defaultName = 'Windows PC';
+        }
+      } catch (_) {
+        defaultName = 'Windows PC';
+      }
       type = DeviceType.laptop;
     }
 
@@ -33,7 +47,7 @@ class IdentityService {
       deviceId: deviceId,
       deviceName: defaultName,
       deviceType: type,
-      osVersion: kIsWeb ? 'Web Engine' : 'Native OS',
+      osVersion: kIsWeb ? 'Web Engine' : Platform.operatingSystemVersion,
       token: token,
     );
   }
