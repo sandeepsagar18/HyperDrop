@@ -1114,7 +1114,7 @@ class HyperDropApp {
         let targetPeers = Array.from(this.selectedPeerIds).map(id => this.peers.get(id)).filter(Boolean);
         if (targetPeers.length === 0) {
             // Local fallback
-            targetPeers = [{ id: 'local_peer', name: 'Local App Vault', url: window.location.origin }];
+            targetPeers = [{ id: 'all', name: 'All Connected Devices', url: window.location.origin }];
         }
 
         const filesToSend = [...this.stagedFiles];
