@@ -65,7 +65,7 @@ class LanHttpReceiverServer {
           await _handleChunkUpload(request);
         } else if (path == '/api/transfer/complete' && request.method == 'POST') {
           await _handleTransferComplete(request);
-        } else if (path == '/connect' && request.method == 'GET') {
+        } else if (path == '/connect' || path == '/' || path.isEmpty) {
           await _handleBrowserConnect(request);
         } else {
           request.response

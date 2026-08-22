@@ -14,12 +14,9 @@ class QrConnectionDialog extends StatelessWidget {
     required this.localIp,
   });
 
-  /// Returns a plain http:// URL pointing at port 3000 (Node.js server — always running).
-  /// Port 8080 only works while Flutter app is open; port 3000 works anytime.
   String get _qrPayload {
-    final encodedName = Uri.encodeQueryComponent(identity.deviceName);
-    // Port 3000 = Node.js HyperDrop server, always running in background
-    return 'http://$localIp:3000';
+    // Port 8080 is the built-in standalone server inside the Flutter app
+    return 'http://$localIp:8080/connect?token=${identity.token}&name=${Uri.encodeQueryComponent(identity.deviceName)}';
   }
 
   @override

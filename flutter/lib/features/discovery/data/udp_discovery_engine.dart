@@ -106,7 +106,7 @@ class UdpDiscoveryEngine {
     } catch (_) {}
   }
 
-  void broadcastPresence() {
+  Future<void> broadcastPresence() async {
     if (_socket == null || !_isListening) return;
 
     try {
@@ -121,7 +121,25 @@ class UdpDiscoveryEngine {
       });
 
       final bytes = utf8.encode(beaconData);
+      
+      // Broadcast to universal broadcast
       _socket?.send(bytes, InternetAddress('255.255.255.255'), defaultDiscoveryPort);
+
+      // Broadcast to all active local interface subnets
+      final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (!addr.isLoopback) {
+            final parts = addr.address.split('.');
+            if (parts.length == 4) {
+              final subnetBroadcast = '${parts[0]}.${parts[1]}.${parts[2]}.255';
+              try {
+                _socket?.send(bytes, InternetAddress(subnetBroadcast), defaultDiscoveryPort);
+              } catch (_) {}
+            }
+          }
+        }
+      }
     } catch (e) {
       debugPrint('[DISCOVERY] Error sending UDP beacon: $e');
     }
