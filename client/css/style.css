@@ -106,12 +106,12 @@ body {
 
 .orbit-arena {
     position: relative;
-    width: 220px;
-    height: 220px;
+    width: 280px;
+    height: 280px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 4px 0 10px;
+    margin: 6px 0 16px;
 }
 
 /* Glowing Neon Green Radar Sweep Beam with invisible fading tail */
@@ -119,10 +119,10 @@ body {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 210px;
-    height: 210px;
-    margin-top: -105px;
-    margin-left: -105px;
+    width: 270px;
+    height: 270px;
+    margin-top: -135px;
+    margin-left: -135px;
     border-radius: 50%;
     background: conic-gradient(from 0deg, rgba(0, 255, 135, 0.3) 0deg, rgba(0, 255, 135, 0.06) 20deg, transparent 35deg, transparent 360deg);
     animation: radarSweepRotate 3.2s linear infinite;
@@ -477,7 +477,7 @@ body {
     position: relative;
     width: 180px;
     height: 100px;
-    margin: 4px auto 14px;
+    margin: 4px auto 28px;
     display: flex;
     align-items: center;
     justify-content: center;

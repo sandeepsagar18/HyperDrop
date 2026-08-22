@@ -245,7 +245,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 children: [
                   // ── RADAR ───────────────────────────────────────────────
                   SizedBox(
-                    height: 180,
+                    height: 240,
                     child: RadarWidget(peers: peers, selfName: identity.deviceName),
                   ),
 
@@ -1018,7 +1018,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           // Gauge
           Center(child: SpeedGaugeWidget(speedMBs: _liveSpeedMBs)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 28),
 
           // Stats row
           Row(
