@@ -1314,6 +1314,7 @@ class HyperDropApp {
     }
 
     async cancelTransfer(fileId) {
+        this.cancelledTransferIds.add(fileId);
         if (this.workers.has(fileId)) {
             const w = this.workers.get(fileId);
             w.status = 'cancelled';

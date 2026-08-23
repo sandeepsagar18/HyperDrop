@@ -14,6 +14,7 @@ class VaultManager extends EventEmitter {
         this.indexFile = VAULT_DATA_FILE;
         this.files = [];
         this.activeUploads = new Map(); // fileId -> uploadData
+        this.cancelledUploadIds = new Set();
         this._initStorage();
     }
 
@@ -60,6 +61,10 @@ class VaultManager extends EventEmitter {
     }
 
     async handleChunk({ fileId, fileName, fileSize, chunkIndex, totalChunks, startByte = 0, senderId, senderName, targetPeerId, targetPeerName, chunkBuffer }) {
+        if (this.cancelledUploadIds.has(fileId)) {
+            return { status: 'cancelled' };
+        }
+
         if (!this.activeUploads.has(fileId)) {
             const cleanName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
             const finalFileName = `${Date.now()}_${cleanName}`;
@@ -97,7 +102,7 @@ class VaultManager extends EventEmitter {
         }
 
         const upload = this.activeUploads.get(fileId);
-        if (upload.isCancelled) {
+        if (!upload || upload.isCancelled || this.cancelledUploadIds.has(fileId)) {
             return { status: 'cancelled' };
         }
 
@@ -224,6 +229,7 @@ class VaultManager extends EventEmitter {
     }
 
     cancelUpload(fileId) {
+        this.cancelledUploadIds.add(fileId);
         const upload = this.activeUploads.get(fileId);
         if (upload) {
             upload.isCancelled = true;

@@ -14,7 +14,7 @@ const activeSessions = new Map(); // token -> { deviceId, deviceName, createdAt 
 
 const TEMP_UPLOADS_DIR = path.join(process.cwd(), '.hyperdrop_vault', 'temp_uploads');
 
-function createApiRouter({ discoveryEngine, workerPool, appState }) {
+function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs }) {
     const router = express.Router();
 
     // Ensure temp_uploads directory exists

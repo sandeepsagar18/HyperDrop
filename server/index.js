@@ -65,7 +65,7 @@ const workerPool = new TransferWorkerPool({
 });
 
 // Mount API routes
-app.use('/api', createApiRouter({ discoveryEngine, workerPool }));
+app.use('/api', createApiRouter({ discoveryEngine, workerPool, broadcastWs }));
 
 // Broadcast helper for WebSockets (with targeted recipient routing)
 function broadcastWs(type, data, targetFilter = null) {
