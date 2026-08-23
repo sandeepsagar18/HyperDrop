@@ -1264,6 +1264,9 @@ class HyperDropApp {
             this.showToast(`✓ Sent ${file.name} to ${peer.name} in ${workerData.durationSec}s (${workerData.avgSpeedMBs} MB/s)`);
 
         } catch (err) {
+            if (workerData.isCancelled || workerData.status === 'cancelled') {
+                return; // Suppress failure reporting if intentionally cancelled by user
+            }
             console.error(`[TRANSFER] Failed streaming to ${peer.name}:`, err);
             workerData.status = 'failed';
             workerData.errorMessage = err.message || 'Transfer failed';
