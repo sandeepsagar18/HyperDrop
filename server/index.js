@@ -172,6 +172,12 @@ wss.on('connection', (ws, req) => {
                 if (peer) {
                     peer.lastSeen = Date.now();
                 }
+            } else if (parsed.type === 'transfer_cancelled') {
+                if (parsed.data && parsed.data.fileId) {
+                    workerPool.cancelWorker(parsed.data.fileId);
+                    vaultManager.cancelUpload(parsed.data.fileId);
+                    broadcastWs('transfer_cancelled', parsed.data);
+                }
             }
         } catch (err) {
             console.error('[WS] Message error:', err.message);

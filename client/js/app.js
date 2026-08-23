@@ -1295,14 +1295,26 @@ class HyperDropApp {
             w.status = 'cancelled';
             w.speedMBs = 0.0;
             w.speedMbps = 0.0;
-            if (w.xhr && typeof w.xhr.abort === 'function') {
-                try { w.xhr.abort(); } catch (e) {}
+            w.isCancelled = true;
+            if (w.xhr) {
+                try {
+                    w.xhr.onprogress = null;
+                    w.xhr.onload = null;
+                    w.xhr.onerror = null;
+                    w.xhr.ontimeout = null;
+                    w.xhr.abort();
+                } catch (e) {}
             }
             this.renderTransferEngine();
         }
+        
+        // Notify server and all peers of instant cancellation
         try {
             await fetch(`/api/transfer/cancel/${fileId}`, { method: 'POST' });
         } catch (e) {}
+        if (this.ws && this.ws.readyState === 1) {
+            this.ws.send(JSON.stringify({ type: 'transfer_cancelled', data: { fileId } }));
+        }
         this.showToast('Transfer cancelled');
     }
 
