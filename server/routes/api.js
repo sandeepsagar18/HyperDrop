@@ -244,6 +244,7 @@ function createApiRouter({ discoveryEngine, workerPool, appState }) {
         const fileId = req.params.id;
         workerPool.cancelWorker(fileId);
         vaultManager.cancelUpload(fileId);
+        broadcastWs('transfer_cancelled', { fileId });
         res.json({ success: true, message: `Transfer ${fileId} cancelled` });
     });
 

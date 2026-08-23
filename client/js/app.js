@@ -1276,6 +1276,9 @@ class HyperDropApp {
     }
 
     handleIncomingProgress(data) {
+        if (this.cancelledTransferIds.has(data.fileId)) {
+            return; // Ignore if user cancelled
+        }
         // If this client is not the sender, track as incoming receiver queue item
         const existing = this.workers.get(data.fileId) || {
             id: data.fileId,
