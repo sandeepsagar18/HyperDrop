@@ -11,6 +11,7 @@ class HyperDropApp {
         this.systemStatus = null;
         this.peakSpeedMBs = 0.0;
         this.totalBytesMoved = 0;
+        this.cancelledTransferIds = new Set();
 
         // Local client identification & custom name
         this.clientId = localStorage.getItem('hyperdrop_client_id') || `web_${Math.random().toString(36).substr(2, 8)}`;
@@ -212,17 +213,23 @@ class HyperDropApp {
                 break;
 
             case 'transfer_cancelled':
+                if (data && data.fileId) {
+                    this.cancelledTransferIds.add(data.fileId);
+                }
                 if (this.workers.has(data.fileId)) {
                     const w = this.workers.get(data.fileId);
                     w.status = 'cancelled';
+                    w.isCancelled = true;
                     this.renderTransferEngine();
                 }
                 break;
 
             case 'worker_progress':
             case 'worker_status':
-                this.workers.set(data.id, data);
-                this.renderTransferEngine();
+                if (!this.cancelledTransferIds.has(data.id)) {
+                    this.workers.set(data.id, data);
+                    this.renderTransferEngine();
+                }
                 break;
 
             case 'clipboard_synced':
@@ -240,8 +247,12 @@ class HyperDropApp {
                 break;
 
             case 'file_received':
+                if (this.cancelledTransferIds.has(data.id)) {
+                    return; // Ignore completely if user clicked cancel!
+                }
                 if (this.workers.has(data.id)) {
                     const w = this.workers.get(data.id);
+                    if (w.isCancelled || w.status === 'cancelled') return;
                     w.status = 'completed';
                     w.percent = 100;
                     w.durationSec = data.durationSec || '1.2';
