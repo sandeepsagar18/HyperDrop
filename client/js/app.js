@@ -216,12 +216,25 @@ class HyperDropApp {
                 if (data && data.fileId) {
                     this.cancelledTransferIds.add(data.fileId);
                 }
-                if (this.workers.has(data.fileId)) {
-                    const w = this.workers.get(data.fileId);
-                    w.status = 'cancelled';
-                    w.isCancelled = true;
-                    this.renderTransferEngine();
+                // Abort any matching sender or receiver workers
+                for (const [wId, w] of this.workers.entries()) {
+                    if (wId === data.fileId || w.fileId === data.fileId || (data.fileName && w.fileName === data.fileName) || (w.xhr && w.status === 'streaming')) {
+                        w.status = 'cancelled';
+                        w.isCancelled = true;
+                        w.speedMBs = 0.0;
+                        w.speedMbps = 0.0;
+                        if (w.xhr) {
+                            try {
+                                w.xhr.onprogress = null;
+                                w.xhr.onload = null;
+                                w.xhr.onerror = null;
+                                w.xhr.ontimeout = null;
+                                w.xhr.abort();
+                            } catch (e) {}
+                        }
+                    }
                 }
+                this.renderTransferEngine();
                 break;
 
             case 'worker_progress':
