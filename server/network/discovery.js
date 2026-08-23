@@ -58,11 +58,19 @@ class DiscoveryEngine extends EventEmitter {
                 this.socket.setBroadcast(true);
             } catch (e) {}
             const address = this.socket.address();
-            console.log(`[DISCOVERY] QR-Only Discovery listening on ${address.address}:${address.port}`);
+            console.log(`[DISCOVERY] Peer Discovery active on ${address.address}:${address.port}`);
             this.isRunning = true;
 
-            // Stale peer cleanup
-            this.cleanupTimer = setInterval(() => this._cleanupStalePeers(), 3000);
+            // 1. Proactive Subnet & Universal Broadcast (every 1.5s)
+            this.beaconTimer = setInterval(() => this._broadcastBeacon(), 1500);
+            this._broadcastBeacon();
+
+            // 2. Active Hotspot & Subnet Probe (every 3s)
+            this.arpScanTimer = setInterval(() => this._scanArpAndSubnet(), 3000);
+            this._scanArpAndSubnet();
+
+            // 3. Stale peer cleanup (every 4s)
+            this.cleanupTimer = setInterval(() => this._cleanupStalePeers(), 4000);
         });
 
         try {
