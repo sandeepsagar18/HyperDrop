@@ -79,6 +79,13 @@ class HyperDropApp {
 
         this.ws.onopen = () => {
             this.registerDeviceOnRadar();
+            
+            // Check if opened via QR code pairing scan
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('token') || urlParams.has('qr') || window.location.search.includes('connect')) {
+                this.showToast('⚡ Paired via QR Code! Ready to transfer.');
+            }
+
             setInterval(() => {
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                     this.ws.send(JSON.stringify({ type: 'heartbeat', id: this.clientId }));
