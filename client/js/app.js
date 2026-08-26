@@ -147,13 +147,25 @@ class HyperDropApp {
 
     getUniquePeersList() {
         const seenIps = new Set();
+        const seenIds = new Set();
         const list = [];
-        for (const peer of this.peers.values()) {
+        
+        // Convert map values to array and sort so named web clients are processed first
+        const allPeers = Array.from(this.peers.values()).sort((a, b) => {
+            if (a.isWebClient && !b.isWebClient) return -1;
+            if (!a.isWebClient && b.isWebClient) return 1;
+            return (b.lastSeen || 0) - (a.lastSeen || 0);
+        });
+
+        for (const peer of allPeers) {
             if (peer.id === this.clientId) continue;
             const ipKey = peer.ip;
-            if (ipKey && seenIps.has(ipKey)) continue;
-            if (ipKey) seenIps.add(ipKey);
-            list.push(peer);
+            const idKey = peer.id;
+            if ((!ipKey || !seenIps.has(ipKey)) && (!idKey || !seenIds.has(idKey))) {
+                if (ipKey) seenIps.add(ipKey);
+                if (idKey) seenIds.add(idKey);
+                list.push(peer);
+            }
         }
         return list;
     }

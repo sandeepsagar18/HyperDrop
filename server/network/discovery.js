@@ -236,10 +236,11 @@ class DiscoveryEngine extends EventEmitter {
 
         const peerId = id || `web_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
         
-        // Remove any old peer entry with this IP
+        // Remove any old peer entry with this IP (e.g. arp_192_168_29_176)
         for (const [k, p] of this.peers.entries()) {
             if (p.ip === ip && k !== peerId) {
                 this.peers.delete(k);
+                this.emit('peer_lost', { id: k });
             }
         }
 

@@ -170,6 +170,13 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
             peers = [hostPeer, ...rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp && !ownIps.has(p.ip))];
         }
 
+        // Sort so real registered Web Clients (with real device name) come first before generic ARP candidates
+        peers.sort((a, b) => {
+            if (a.isWebClient && !b.isWebClient) return -1;
+            if (!a.isWebClient && b.isWebClient) return 1;
+            return (b.lastSeen || 0) - (a.lastSeen || 0);
+        });
+
         // Strictly deduplicate by IP and ID
         const seenIps = new Set();
         const seenIds = new Set();
