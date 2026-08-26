@@ -1,46 +1,56 @@
 # HyperDrop ⚡ — High-Speed Hybrid Local & P2P Transfer Engine
 
-**HyperDrop** is a peer-to-peer file transfer engine designed for fast, seamless cross-device sharing. Engineered for maximum local hardware bandwidth utilization without relying on cloud storage servers.
+<div align="center">
+
+**Lightning-fast, peer-to-peer file sharing designed for cross-device transfer.**
+*Engineered for maximum local hardware bandwidth utilization without cloud dependencies.*
+
+[![GitHub Release](https://img.shields.io/badge/Release-v1.0.0-00f2fe.svg)](https://github.com/sandeepsagar18/HyperDrop)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20macOS%20%7C%20Linux-00ff87.svg)](https://github.com/sandeepsagar18/HyperDrop)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+</div>
 
 ---
 
 ## ⚡ Core Transfer Modes
 
 ### ⚡ Local Wi-Fi Transfer
-Transfer files directly between devices connected to the same Wi-Fi network — without uploading your files to a cloud server.
+Transfer files directly between devices connected to the same Wi-Fi network without uploading files to a cloud storage server.
 
 ### 📱 Mobile Hotspot Mode
-No router? No problem. Connect devices directly through a mobile hotspot with zero internet connection required.
+No router available? Connect devices directly through a mobile hotspot with zero internet connection required.
 
-### 🚀 High-Speed File Transfer Engine
-HyperDrop is designed to utilize available local network bandwidth for ultra-fast transfers, including multi-gigabyte files and entire folder directories.
+### 🚀 High-Speed Multi-Worker Transfer Engine
+Utilizes available local network bandwidth for gigabit-speed transfers, including multi-gigabyte files and complete directory structures.
 
-### 🔒 Direct & Private
-Files are transferred directly between connected devices rather than being routed through a central cloud storage server.
+### 🔒 Direct & End-to-End Private
+Files stream directly between peer devices over local socket channels rather than routing through intermediary servers.
 
 ---
 
 ## 🌟 Key Features
 
-- **Cross-Platform Parity**:
-  - 🖥️ **Windows Desktop App** built with **Flutter & Riverpod** (64-bit native high-performance executable).
-  - 📱 **Mobile & Web Client** (Zero-install web client for Android, iPhone, iPad, macOS, Linux).
-- **Automated Radar Discovery**:
-  - Dual UDP broadcast + background poll engine automatically detects nearby devices on your local network.
-  - Interactive orbital radar showing live device nodes.
-- **Dynamic QR Connect**:
-  - Scan the dynamic QR code directly from your phone camera to instantly connect and transfer files.
-- **Live Transfer Engine & Speedometer**:
-  - Live speedometer gauge measuring real-time transfer throughput in MB/s.
-  - 1-Click **Cancel** and **Restart** controls positioned side-by-side.
-  - Live metrics: Peak Speed, Active Channels, Total Data Moved, and ETA.
-- **App Data Vault & Previewer**:
+- **📱 💻 100% Fluid Responsive Layout**:
+  - Seamlessly adapts across widescreen monitors, laptops, tablets, and mobile devices.
+  - Multi-column dashboard grid with an expanded **Data Vault & Storage** view.
+  - Cyberpunk dark theme with glowing neon accents and orbital radar interface.
+- **🛰️ Automated Radar & Subnet Discovery**:
+  - Dual UDP broadcast + active ARP LAN subnet probing automatically detects nearby phones and laptops.
+  - Real-time orbital radar displays connected device nodes with interactive status badges.
+- **📷 Instant QR Code Pairing**:
+  - Scan the dynamic QR code on the dashboard directly from any mobile camera to pair and stream files instantly.
+- **⚡ Live Transfer Speedometer & Metric Controls**:
+  - Real-time speedometer gauge displaying transfer throughput in MB/s.
+  - 1-Click **Cancel** and **Restart** controls for active file transfers.
+  - Metrics tracking: **Peak Speed**, **Active Streaming Channels**, **Total Transferred**, and **ETA**.
+- **📦 Data Vault & In-App Media Viewer**:
   - Built-in secure offline vault with SHA-256 integrity verification.
-  - Instant file previews for Images, Audio, Videos, and PDFs.
-- **Instant Text & Clipboard Sync**:
-  - Send clipboard text, links, and messages seamlessly across all connected devices.
-- **Privacy-Preserving Feedback System**:
-  - Built-in feedback integration directly launching user email client without exposing recipient addresses.
+  - Built-in instant preview players for Images, Videos, Audio, and PDFs.
+- **📋 Instant Text & Clipboard Sync**:
+  - Send clipboard notes, links, and messages instantly across all connected devices.
+- **📦 Windows Setup Wizard (`HyperDrop-Setup.exe`)**:
+  - Native standalone 1-click Windows installer packaging the high-performance release binary and desktop shortcuts.
 
 ---
 
@@ -48,10 +58,10 @@ Files are transferred directly between connected devices rather than being route
 
 | Layer | Technologies |
 |---|---|
-| **Flutter Desktop App** | Flutter 3.x, Dart, Riverpod 2.x, Win32 Native API, Network Info Plus |
-| **Backend & Engine** | Node.js, Express, WebSocket, UDP Broadcast Engine, Multi-Worker Pool |
-| **Web Frontend** | Vanilla ES6+ JavaScript, CSS3 Cyber Dark Theme, Offline SVG Icon Pack |
-| **Network Protocols** | TCP Chunk Streaming, UDP Peer Pulse, WebSockets, WebRTC DataChannels |
+| **Windows Desktop App** | Flutter 3.x, Dart, Riverpod 2.x, Win32 Native API, WebView Windows |
+| **Backend Engine** | Node.js, Express, WebSocket, UDP Broadcast Engine, Multi-Worker Pool |
+| **Web Frontend** | Vanilla ES6+ JavaScript, Responsive CSS Grid/Flexbox, Offline FontAwesome Icon Suite |
+| **Network Protocols** | TCP Chunk Streaming, UDP Subnet Beacons, WebSockets, WebRTC DataChannels, ARP Scanner |
 
 ---
 
@@ -81,35 +91,35 @@ Access the interface:
 
 ---
 
-### 2. Flutter Desktop Application (Windows)
+### 2. Windows Desktop Application
 
-#### Prerequisites
-- [Flutter SDK](https://flutter.dev/docs/get-started/install) (3.0+)
+#### Option A: 1-Click Installer
+Run `HyperDrop-Setup.exe` to automatically install the release application and create desktop shortcuts.
 
-#### Build & Run
+#### Option B: Build from Source with Flutter
 ```bash
 cd flutter
 
-# Get Flutter packages
+# Get dependencies
 flutter pub get
 
 # Run on Windows
 flutter run -d windows
 
-# Or build debug / release executable
-flutter build windows --debug
+# Build Release Executable
+flutter build windows --release
 ```
 
-The compiled binary will be located at:
+The compiled release binary will be generated at:
 ```
-flutter/build/windows/x64/runner/Debug/hyperdrop_flutter.exe
+flutter/build/windows/x64/runner/Release/hyperdrop_flutter.exe
 ```
 
 ---
 
-## 🔒 Network & Firewall Configuration
+## 🔒 Network & Firewall Setup
 
-If other devices on your Wi-Fi cannot reach the server on port `3000`:
+If other devices on your Wi-Fi network cannot reach the laptop on port `3000`:
 1. Right-click on **`fix_firewall_run_as_admin.bat`** in the root directory.
 2. Select **"Run as administrator"**.
 3. Ensure your Windows Wi-Fi Network Profile is set to **Private**.
@@ -119,4 +129,5 @@ If other devices on your Wi-Fi cannot reach the server on port `3000`:
 ## 👨‍💻 Author
 
 **Built with ❤️ by Sandeep**
-- **Repository:** [sandeepsagar18/HyperDrop](https://github.com/sandeepsagar18/HyperDrop)
+- **GitHub:** [@sandeepsagar18](https://github.com/sandeepsagar18)
+- **Repository:** [HyperDrop](https://github.com/sandeepsagar18/HyperDrop)
