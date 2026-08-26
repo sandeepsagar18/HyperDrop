@@ -9,7 +9,7 @@ const networkMonitor = require('./network/networkMonitor');
 const { TransferWorkerPool } = require('./transfer/workerPool');
 const vaultManager = require('./vault/vaultManager');
 const createApiRouter = require('./routes/api');
-const { getPrimaryIp } = require('./network/interfaces');
+const { getPrimaryIp, getNetworkInterfaces } = require('./network/interfaces');
 const { handleSignalingMessage, handleSignalingDisconnect } = require('./signaling/signalingServer');
 const { getIceConfiguration } = require('./network/iceConfig');
 
@@ -123,11 +123,32 @@ wss.on('connection', (ws, req) => {
 
     let registeredPeerId = null;
 
-    // Send initial snapshot on client connect
+    // Send initial snapshot on client connect (including Host Laptop for remote mobile clients!)
+    const interfaces = getNetworkInterfaces();
+    const ownIps = new Set(['127.0.0.1', '::1', ...interfaces.map(i => i.address)]);
+    const isLocalhost = ownIps.has(clientIp);
+
+    let initialPeers = discoveryEngine.getPeers();
+    if (!isLocalhost) {
+        const hostPeer = {
+            id: discoveryEngine.deviceId,
+            name: discoveryEngine.deviceName,
+            deviceType: discoveryEngine.deviceType,
+            osType: discoveryEngine.osType,
+            avatar: discoveryEngine.avatar,
+            ip: networkMonitor.currentIp,
+            httpPort: PORT,
+            url: `http://${networkMonitor.currentIp}:${PORT}`,
+            isHost: true,
+            lastSeen: Date.now()
+        };
+        initialPeers = [hostPeer, ...initialPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp)];
+    }
+
     ws.send(JSON.stringify({
         type: 'init_state',
         data: {
-            peers: discoveryEngine.getPeers(),
+            peers: initialPeers,
             workers: workerPool.getAllWorkers(),
             vaultStats: vaultManager.getVaultStats(),
             primaryIp: getPrimaryIp(),
@@ -163,8 +184,25 @@ wss.on('connection', (ws, req) => {
                 // Acknowledge registration
                 ws.send(JSON.stringify({ type: 'registered_ack', data: peer }));
                 
-                // Broadcast to all other connected clients only if truly new
-                if (!isAlreadyRegistered) {
+                // If a remote client (e.g. Phone) connects, ensure it immediately gets the Host Laptop on its radar!
+                if (!isLocalhost) {
+                    const hostPeer = {
+                        id: discoveryEngine.deviceId,
+                        name: discoveryEngine.deviceName,
+                        deviceType: discoveryEngine.deviceType,
+                        osType: discoveryEngine.osType,
+                        avatar: discoveryEngine.avatar,
+                        ip: networkMonitor.currentIp,
+                        httpPort: PORT,
+                        url: `http://${networkMonitor.currentIp}:${PORT}`,
+                        isHost: true,
+                        lastSeen: Date.now()
+                    };
+                    ws.send(JSON.stringify({ type: 'peer_discovered', data: hostPeer }));
+                }
+
+                // Broadcast this newly registered phone/peer to all other connected devices (e.g. Laptop)
+                if (peer) {
                     broadcastWs('peer_discovered', peer);
                 }
             } else if (parsed.type === 'heartbeat') {
@@ -172,6 +210,21 @@ wss.on('connection', (ws, req) => {
                 if (peer) {
                     peer.lastSeen = Date.now();
                 }
+            } else if (parsed.type === 'transfer_stream_progress') {
+                broadcastWs('incoming_transfer_progress', parsed.data, (client) => {
+                    if (!parsed.data.targetPeerId || parsed.data.targetPeerId === 'all') return true;
+                    return client.peerId === parsed.data.targetPeerId;
+                });
+            } else if (parsed.type === 'transfer_stream_complete') {
+                broadcastWs('file_received', {
+                    id: parsed.data.fileId,
+                    fileName: parsed.data.fileName,
+                    originalName: parsed.data.fileName,
+                    size: parsed.data.fileSize,
+                    durationSec: parsed.data.durationSec,
+                    avgSpeedMBs: parsed.data.avgSpeedMBs,
+                    senderName: parsed.data.senderName
+                });
             } else if (parsed.type === 'transfer_cancelled') {
                 if (parsed.data && parsed.data.fileId) {
                     workerPool.cancelWorker(parsed.data.fileId);

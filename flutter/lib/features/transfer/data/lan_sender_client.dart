@@ -10,10 +10,29 @@ import '../domain/models/transfer_model.dart';
 class LanSenderClient {
   static const int defaultChunkSize = 2 * 1024 * 1024; // 2MB chunk
   static final Set<String> _cancelledTransferIds = {};
+  static final Map<String, HttpClientRequest> _activeRequests = {};
+  static final Map<String, RandomAccessFile> _activeFiles = {};
 
   static void cancelTransfer(String fileId) {
     _cancelledTransferIds.add(fileId);
-    // Notify server to drop chunk ingestion immediately
+    
+    // Immediately abort in-flight network request
+    if (_activeRequests.containsKey(fileId)) {
+      try {
+        _activeRequests[fileId]?.abort();
+      } catch (_) {}
+      _activeRequests.remove(fileId);
+    }
+
+    // Close any open file handle
+    if (_activeFiles.containsKey(fileId)) {
+      try {
+        _activeFiles[fileId]?.closeSync();
+      } catch (_) {}
+      _activeFiles.remove(fileId);
+    }
+
+    // Notify local server to cancel ingestion and broadcast to connected phones
     try {
       http.post(Uri.parse('http://127.0.0.1:3000/api/transfer/cancel/$fileId'));
     } catch (_) {}
@@ -60,6 +79,7 @@ class LanSenderClient {
         final chunkSize = customChunkSize ?? defaultChunkSize;
         final totalChunks = (fileSize / chunkSize).ceil().clamp(1, 999999);
         final raf = await file.open(mode: FileMode.read);
+        _activeFiles[fileId] = raf;
         
         int bytesTransferred = 0;
         final startTime = DateTime.now();
@@ -68,6 +88,7 @@ class LanSenderClient {
 
         for (int i = 0; i < totalChunks; i++) {
           if (_cancelledTransferIds.contains(fileId)) {
+            _activeFiles.remove(fileId);
             await raf.close();
             currentTransfer = currentTransfer.copyWith(
               status: TransferStatus.cancelled,
@@ -92,6 +113,8 @@ class LanSenderClient {
 
           final uri = Uri.parse('http://127.0.0.1:3000/api/vault/upload-chunk');
           final req = await client.postUrl(uri);
+          _activeRequests[fileId] = req;
+
           req.headers.add('x-file-id', fileId);
           req.headers.add('x-file-name', Uri.encodeComponent(fileName));
           req.headers.add('x-file-size', fileSize.toString());
@@ -103,6 +126,7 @@ class LanSenderClient {
           req.add(chunkBytes);
 
           final res = await req.close();
+          _activeRequests.remove(fileId);
           bytesTransferred += currentChunkLen;
 
           final now = DateTime.now();
@@ -128,6 +152,7 @@ class LanSenderClient {
           }
         }
 
+        _activeFiles.remove(fileId);
         await raf.close();
 
         currentTransfer = currentTransfer.copyWith(
@@ -145,6 +170,7 @@ class LanSenderClient {
       final chunkSize = customChunkSize ?? defaultChunkSize;
       final totalChunks = (fileSize / chunkSize).ceil().clamp(1, 999999);
       final raf = await file.open(mode: FileMode.read);
+      _activeFiles[fileId] = raf;
       
       int bytesTransferred = 0;
       final startTime = DateTime.now();
@@ -153,6 +179,7 @@ class LanSenderClient {
 
       for (int i = 0; i < totalChunks; i++) {
         if (_cancelledTransferIds.contains(fileId)) {
+          _activeFiles.remove(fileId);
           await raf.close();
           currentTransfer = currentTransfer.copyWith(
             status: TransferStatus.cancelled,
@@ -178,6 +205,8 @@ class LanSenderClient {
         // Try direct Flutter peer endpoint (/api/transfer/chunk) or Node endpoint (/api/vault/upload-chunk)
         final uri = Uri.parse(targetPort == 8080 ? '$targetBaseUrl/api/transfer/chunk' : '$targetBaseUrl/api/vault/upload-chunk');
         final req = await client.postUrl(uri);
+        _activeRequests[fileId] = req;
+
         req.headers.add('x-file-id', fileId);
         req.headers.add('x-file-name', Uri.encodeComponent(fileName));
         req.headers.add('x-file-size', fileSize.toString());
@@ -189,6 +218,7 @@ class LanSenderClient {
         req.add(chunkBytes);
 
         final res = await req.close();
+        _activeRequests.remove(fileId);
         if (res.statusCode != 200 && res.statusCode != 204) {
           // Fallback if needed
         }

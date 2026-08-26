@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:hyperdrop_flutter/core/theme/app_colors.dart';
 import 'package:hyperdrop_flutter/core/utils/format_utils.dart';
 import 'package:hyperdrop_flutter/features/transfer/domain/models/transfer_model.dart';
@@ -98,25 +98,93 @@ class TransferCard extends StatelessWidget {
                 '${FormatUtils.formatBytes(transfer.bytesTransferred)} / ${FormatUtils.formatBytes(transfer.fileSize)}',
                 style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
               ),
-              if (transfer.status == TransferStatus.transferring)
-                Text(
-                  '${transfer.speedMBs.toStringAsFixed(1)} MB/s (${transfer.speedMbps.toStringAsFixed(0)} Mbps)',
-                  style: const TextStyle(
-                    color: AppColors.accentGreen,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11,
-                  ),
-                ),
-              if (transfer.status == TransferStatus.completed)
-                const Text(
-                  '✓ Completed',
-                  style: TextStyle(color: AppColors.accentGreen, fontWeight: FontWeight.bold, fontSize: 11),
-                ),
-              if (transfer.status == TransferStatus.failed)
-                const Text(
-                  '✕ Failed',
-                  style: TextStyle(color: AppColors.accentRed, fontWeight: FontWeight.bold, fontSize: 11),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (transfer.status == TransferStatus.transferring) ...[
+                    Text(
+                      '${transfer.speedMBs.toStringAsFixed(1)} MB/s',
+                      style: const TextStyle(
+                        color: AppColors.accentGreen,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (onCancel != null)
+                      InkWell(
+                        onTap: onCancel,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentRed.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppColors.accentRed.withOpacity(0.4)),
+                          ),
+                          child: const Text('Cancel', style: TextStyle(color: AppColors.accentRed, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                  ],
+                  if (transfer.status == TransferStatus.completed) ...[
+                    const Text('✓ Done', style: TextStyle(color: AppColors.accentGreen, fontWeight: FontWeight.bold, fontSize: 11)),
+                    if (onRetry != null) ...[
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: onRetry,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                          ),
+                          child: const Text('Restart', style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ],
+                  if (transfer.status == TransferStatus.cancelled) ...[
+                    const Text('✕ Cancelled', style: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.bold, fontSize: 11)),
+                    if (onRetry != null) ...[
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: onRetry,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                          ),
+                          child: const Text('Restart', style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ],
+                  if (transfer.status == TransferStatus.failed) ...[
+                    const Text('✕ Failed', style: TextStyle(color: AppColors.accentRed, fontWeight: FontWeight.bold, fontSize: 11)),
+                    if (onRetry != null) ...[
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: onRetry,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                          ),
+                          child: const Text('Restart', style: TextStyle(color: AppColors.primary, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+              ),
             ],
           ),
         ],

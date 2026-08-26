@@ -131,14 +131,18 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
 
     // 2. Discovered Peers
     router.get('/peers', (req, res) => {
-        const clientIp = req.ip.replace('::ffff:', '');
-        const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === networkMonitor.currentIp;
+        let clientIp = req.ip.replace('::ffff:', '');
+        if (clientIp === '::1') clientIp = '127.0.0.1';
+        
+        const ifaces = getNetworkInterfaces();
+        const ownIps = new Set(['127.0.0.1', '::1', ...ifaces.map(i => i.address)]);
+        const isLocalhost = ownIps.has(clientIp);
         const rawPeers = discoveryEngine.getPeers();
 
         let peers = [];
         if (isLocalhost) {
             // For laptop viewing: show only external devices (phone, friend's laptop)
-            peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== '127.0.0.1' && p.ip !== networkMonitor.currentIp);
+            peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && !ownIps.has(p.ip));
         } else {
             // For remote phone scanning: include the Host Laptop so the phone radar sees this laptop!
             const hostPeer = {
@@ -153,13 +157,46 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
                 isHost: true,
                 lastSeen: Date.now()
             };
-            peers = [hostPeer, ...rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp)];
+            peers = [hostPeer, ...rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp && !ownIps.has(p.ip))];
+        }
+
+        // Strictly deduplicate by IP and ID
+        const seenIps = new Set();
+        const seenIds = new Set();
+        const deduplicatedPeers = [];
+        for (const p of peers) {
+            const ipKey = p.ip;
+            const idKey = p.id;
+            if ((!ipKey || !seenIps.has(ipKey)) && (!idKey || !seenIds.has(idKey))) {
+                if (ipKey) seenIps.add(ipKey);
+                if (idKey) seenIds.add(idKey);
+                deduplicatedPeers.push(p);
+            }
         }
 
         res.json({
             success: true,
-            peers
+            peers: deduplicatedPeers
         });
+    });
+
+    // Instant Active Rescan Trigger
+    router.post('/peers/scan', async (req, res) => {
+        try {
+            if (discoveryEngine) {
+                discoveryEngine._broadcastBeacon();
+                await discoveryEngine._scanArpAndSubnet();
+            }
+            const rawPeers = discoveryEngine ? discoveryEngine.getPeers() : [];
+            res.json({
+                success: true,
+                message: 'Network scan completed',
+                count: rawPeers.length,
+                peers: rawPeers
+            });
+        } catch (err) {
+            res.json({ success: true, count: 0, peers: [] });
+        }
     });
 
     router.post('/peers/manual', (req, res) => {

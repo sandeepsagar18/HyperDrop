@@ -5,9 +5,9 @@ const { getNetworkInterfaces } = require('./interfaces');
 const { getArpConnectedDevices, probeDevice } = require('./autoScanner');
 
 const DISCOVERY_PORT = 35432;
-const BEACON_INTERVAL_MS = 2000;
-const ARP_SCAN_INTERVAL_MS = 3000;
-const PEER_TIMEOUT_MS = 15000;
+const BEACON_INTERVAL_MS = 1500;
+const ARP_SCAN_INTERVAL_MS = 2500;
+const PEER_TIMEOUT_MS = 60000; // 60s timeout so connected phones remain permanently visible with heartbeat
 
 class DiscoveryEngine extends EventEmitter {
     constructor(deviceInfo = {}) {
@@ -94,7 +94,26 @@ class DiscoveryEngine extends EventEmitter {
     }
 
     getPeers() {
-        return Array.from(this.peers.values());
+        const unique = new Map();
+        const interfaces = getNetworkInterfaces();
+        const ownIps = new Set(['127.0.0.1', '::1', ...interfaces.map(i => i.address)]);
+
+        for (const peer of this.peers.values()) {
+            if (peer.id === this.deviceId || ownIps.has(peer.ip)) {
+                continue;
+            }
+            const key = peer.ip || peer.id;
+            if (!unique.has(key)) {
+                unique.set(key, peer);
+            } else {
+                // If existing peer is auto-probed and new is web client with proper name, prefer the web client
+                const existing = unique.get(key);
+                if (peer.isWebClient && !existing.isWebClient) {
+                    unique.set(key, peer);
+                }
+            }
+        }
+        return Array.from(unique.values());
     }
 
     onNetworkChanged({ previousIp, newIp, diagnostics }) {
@@ -148,11 +167,17 @@ class DiscoveryEngine extends EventEmitter {
         }
 
         // Try standard ports (3000, 8080)
+        let found = false;
         for (const port of [this.httpPort, 8080, 3000]) {
             const probeRes = await probeDevice(ip, port);
             if (probeRes && probeRes.isHyperDrop && probeRes.data) {
                 const peerId = probeRes.data.deviceId || `hd_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
                 if (peerId === this.deviceId) continue;
+
+                // Clean any other entry with same IP
+                for (const [k, p] of this.peers.entries()) {
+                    if (p.ip === ip && k !== peerId) this.peers.delete(k);
+                }
 
                 const peerData = {
                     id: peerId,
@@ -170,13 +195,52 @@ class DiscoveryEngine extends EventEmitter {
                 this.peers.set(peerId, peerData);
                 console.log(`[DISCOVERY] Peer discovered via probe: ${peerData.name} (${peerData.ip}:${peerData.httpPort})`);
                 this.emit('peer_discovered', peerData);
+                found = true;
                 break;
+            }
+        }
+
+        // If active on LAN ARP table but not yet running background listener, register as Nearby Wireless Device
+        if (!found) {
+            const peerId = `arp_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            if (!this.peers.has(peerId)) {
+                const peerData = {
+                    id: peerId,
+                    name: `Nearby Device (${ip.split('.').slice(-2).join('.')})`,
+                    deviceType: 'phone',
+                    osType: 'Connected on Wi-Fi',
+                    avatar: '📱',
+                    ip,
+                    httpPort: this.httpPort,
+                    url: `http://${ip}:${this.httpPort}`,
+                    isArpCandidate: true,
+                    lastSeen: Date.now()
+                };
+                this.peers.set(peerId, peerData);
+                console.log(`[DISCOVERY] Connected LAN Device discovered via ARP: ${peerData.name} (${peerData.ip})`);
+                this.emit('peer_discovered', peerData);
             }
         }
     }
 
     registerWebClient({ id, name, deviceType, osType, avatar, ip, httpPort }) {
+        const interfaces = getNetworkInterfaces();
+        const ownIps = new Set(['127.0.0.1', '::1', ...interfaces.map(i => i.address)]);
+        
+        // If the web client is running locally on the host machine, do not register it as an external peer
+        if (ownIps.has(ip)) {
+            return null;
+        }
+
         const peerId = id || `web_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        
+        // Remove any old peer entry with this IP
+        for (const [k, p] of this.peers.entries()) {
+            if (p.ip === ip && k !== peerId) {
+                this.peers.delete(k);
+            }
+        }
+
         const isNew = !this.peers.has(peerId);
 
         const peerData = {
@@ -194,8 +258,8 @@ class DiscoveryEngine extends EventEmitter {
 
         this.peers.set(peerId, peerData);
 
+        console.log(`[DISCOVERY] Registered Web Client: ${peerData.name} (${peerData.ip}) - isNew: ${isNew}`);
         if (isNew) {
-            console.log(`[DISCOVERY] Registered active Web Client peer: ${peerData.name} (${peerData.ip})`);
             this.emit('peer_discovered', peerData);
         } else {
             this.emit('peer_updated', peerData);
@@ -214,6 +278,14 @@ class DiscoveryEngine extends EventEmitter {
             }
 
             const peerId = data.id;
+
+            // Remove any other peer entry with this IP
+            for (const [k, p] of this.peers.entries()) {
+                if (p.ip === rinfo.address && k !== peerId) {
+                    this.peers.delete(k);
+                }
+            }
+
             const isNew = !this.peers.has(peerId);
 
             const peerData = {
