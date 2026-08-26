@@ -109,6 +109,16 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
         });
     });
 
+    // High-Precision Ping for Real Wi-Fi Network Distance Estimation
+    router.get('/ping', (req, res) => {
+        const clientTimestamp = parseInt(req.query.t, 10) || Date.now();
+        res.json({
+            success: true,
+            t: clientTimestamp,
+            serverTime: Date.now()
+        });
+    });
+
     // Resumable Upload Status Check
     router.get('/vault/upload-status/:fileId', (req, res) => {
         const status = vaultManager.getUploadStatus(req.params.fileId);

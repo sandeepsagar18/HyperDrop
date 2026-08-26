@@ -45,18 +45,20 @@ function getArpConnectedDevices() {
 }
 
 /**
- * Checks if an IP is actively running HyperDrop
+ * Checks if an IP is actively running HyperDrop and measures real network latency
  */
 function probeDevice(ip, port = 3000, timeout = 1000) {
     return new Promise((resolve) => {
+        const start = Date.now();
         const req = http.get(`http://${ip}:${port}/api/status`, { timeout }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
+                const latencyMs = Math.max(1, Date.now() - start);
                 try {
                     const parsed = JSON.parse(data);
                     if (parsed && parsed.success) {
-                        return resolve({ isHyperDrop: true, ip, port, data: parsed });
+                        return resolve({ isHyperDrop: true, ip, port, latencyMs, data: parsed });
                     }
                 } catch (e) {}
                 resolve(null);

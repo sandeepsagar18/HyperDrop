@@ -179,6 +179,7 @@ class DiscoveryEngine extends EventEmitter {
                     if (p.ip === ip && k !== peerId) this.peers.delete(k);
                 }
 
+                const latency = probeRes.latencyMs || 5;
                 const peerData = {
                     id: peerId,
                     name: probeRes.data.deviceName || (probeRes.data.deviceType === 'phone' ? 'Android / iPhone' : 'Nearby Laptop'),
@@ -187,6 +188,7 @@ class DiscoveryEngine extends EventEmitter {
                     avatar: (probeRes.data.deviceType === 'phone') ? '📱' : '💻',
                     ip,
                     httpPort: port,
+                    latencyMs: latency,
                     url: `http://${ip}:${port}`,
                     isAutoDiscovered: true,
                     lastSeen: Date.now()
