@@ -166,8 +166,7 @@ class DiscoveryEngine extends EventEmitter {
             return;
         }
 
-        // Try standard ports (3000, 8080)
-        let found = false;
+        // Probe ports to discover HyperDrop instances
         for (const port of [this.httpPort, 8080, 3000]) {
             const probeRes = await probeDevice(ip, port);
             if (probeRes && probeRes.isHyperDrop && probeRes.data) {
@@ -197,30 +196,7 @@ class DiscoveryEngine extends EventEmitter {
                 this.peers.set(peerId, peerData);
                 console.log(`[DISCOVERY] Peer discovered via probe: ${peerData.name} (${peerData.ip}:${peerData.httpPort})`);
                 this.emit('peer_discovered', peerData);
-                found = true;
                 break;
-            }
-        }
-
-        // If active on LAN ARP table but not yet running background listener, register as Nearby Wireless Device
-        if (!found) {
-            const peerId = `arp_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
-            if (!this.peers.has(peerId)) {
-                const peerData = {
-                    id: peerId,
-                    name: `Nearby Device (${ip.split('.').slice(-2).join('.')})`,
-                    deviceType: 'phone',
-                    osType: 'Connected on Wi-Fi',
-                    avatar: '📱',
-                    ip,
-                    httpPort: this.httpPort,
-                    url: `http://${ip}:${this.httpPort}`,
-                    isArpCandidate: true,
-                    lastSeen: Date.now()
-                };
-                this.peers.set(peerId, peerData);
-                console.log(`[DISCOVERY] Connected LAN Device discovered via ARP: ${peerData.name} (${peerData.ip})`);
-                this.emit('peer_discovered', peerData);
             }
         }
     }
