@@ -27,28 +27,81 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
 
   Future<void> _ensureServerRunning() async {
     if (!Platform.isWindows) return;
-    try {
-      // Check if server is already responding
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(milliseconds: 600);
-      final req = await client.getUrl(Uri.parse('http://127.0.0.1:3000/api/status'));
-      final res = await req.close();
-      if (res.statusCode == 200) {
-        return; // Server is already alive!
+
+    // 1. Check if already responding
+    bool isAlive = await _pingServer();
+    if (isAlive) return;
+
+    // 2. Locate node.exe and server/index.js
+    final candidateNodePaths = [
+      'node',
+      r'C:\Program Files\nodejs\node.exe',
+      r'C:\Program Files (x86)\nodejs\node.exe',
+      r'C:\Users\' + (Platform.environment['USERNAME'] ?? '') + r'\AppData\Roaming\nvm\current\node.exe',
+    ];
+
+    final candidateServerPaths = [
+      r'D:\HyperDrop\server\index.js',
+      '${Platform.resolvedExecutable.replaceAll(RegExp(r'[^\\]+$'), '')}server\\index.js',
+      '${Platform.resolvedExecutable.replaceAll(RegExp(r'[^\\]+$'), '')}..\\server\\index.js',
+    ];
+
+    String? foundNode;
+    for (final np in candidateNodePaths) {
+      if (np == 'node' || File(np).existsSync()) {
+        foundNode = np;
+        break;
       }
-    } catch (_) {
-      // Server not responding, spawn it automatically
+    }
+
+    String? foundServer;
+    for (final sp in candidateServerPaths) {
+      if (File(sp).existsSync()) {
+        foundServer = sp;
+        break;
+      }
+    }
+
+    if (foundNode != null && foundServer != null) {
+      try {
+        final serverDir = File(foundServer).parent.parent.path;
+        Process.start(
+          foundNode,
+          [foundServer],
+          workingDirectory: serverDir,
+          mode: ProcessStartMode.detached,
+        );
+      } catch (e) {
+        debugPrint('[SERVER STARTUP ERROR] $e');
+      }
+    } else {
+      // Fallback: spawn npm start in project folder
       try {
         const repoPath = r'D:\HyperDrop';
         if (Directory(repoPath).existsSync()) {
           Process.start('npm.cmd', ['start'],
               workingDirectory: repoPath,
               mode: ProcessStartMode.detached);
-          await Future.delayed(const Duration(seconds: 1));
         }
-      } catch (e) {
-        debugPrint('[SERVER AUTOSTART ERROR] $e');
-      }
+      } catch (_) {}
+    }
+
+    // 3. Poll for up to 6 seconds until server is ready
+    for (int i = 0; i < 12; i++) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (await _pingServer()) break;
+    }
+  }
+
+  Future<bool> _pingServer() async {
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(milliseconds: 500);
+      final req = await client.getUrl(Uri.parse('http://127.0.0.1:3000/api/status'));
+      final res = await req.close();
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 
