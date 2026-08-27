@@ -25,10 +25,38 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
     _initWebView();
   }
 
+  Future<void> _ensureServerRunning() async {
+    if (!Platform.isWindows) return;
+    try {
+      // Check if server is already responding
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(milliseconds: 600);
+      final req = await client.getUrl(Uri.parse('http://127.0.0.1:3000/api/status'));
+      final res = await req.close();
+      if (res.statusCode == 200) {
+        return; // Server is already alive!
+      }
+    } catch (_) {
+      // Server not responding, spawn it automatically
+      try {
+        const repoPath = r'D:\HyperDrop';
+        if (Directory(repoPath).existsSync()) {
+          Process.start('npm.cmd', ['start'],
+              workingDirectory: repoPath,
+              mode: ProcessStartMode.detached);
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } catch (e) {
+        debugPrint('[SERVER AUTOSTART ERROR] $e');
+      }
+    }
+  }
+
   Future<void> _initWebView() async {
     // 1. Windows Platform Engine
     if (Platform.isWindows) {
       try {
+        await _ensureServerRunning();
         await _winController.initialize();
         await _winController.setBackgroundColor(const Color(0xFF030914));
         await _winController.setPopupWindowPolicy(win_wv.WebviewPopupWindowPolicy.deny);
