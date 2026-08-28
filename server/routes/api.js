@@ -147,41 +147,14 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
 
     // 2. Discovered Peers
     router.get('/peers', (req, res) => {
-        let clientIp = req.ip.replace('::ffff:', '');
-        if (clientIp === '::1') clientIp = '127.0.0.1';
-        
-        const ifaces = getNetworkInterfaces();
-        const ownIps = new Set(['127.0.0.1', '::1', ...ifaces.map(i => i.address)]);
-        const isLocalhost = ownIps.has(clientIp);
         const rawPeers = discoveryEngine.getPeers();
+        const clientDeviceId = req.query.deviceId;
 
-        let peers = [];
-        if (isLocalhost) {
-            // For laptop viewing: show only external devices (phone, friend's laptop)
-            peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && !ownIps.has(p.ip));
-        } else {
-            // For remote phone scanning: include the Host Laptop so the phone radar sees this laptop!
-            const hostPeer = {
-                id: discoveryEngine.deviceId,
-                name: discoveryEngine.deviceName,
-                deviceType: discoveryEngine.deviceType,
-                osType: discoveryEngine.osType,
-                avatar: discoveryEngine.avatar,
-                ip: networkMonitor.currentIp,
-                httpPort: discoveryEngine.httpPort,
-                url: `http://${networkMonitor.currentIp}:${discoveryEngine.httpPort}`,
-                isHost: true,
-                lastSeen: Date.now()
-            };
-            peers = [hostPeer, ...rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp && !ownIps.has(p.ip))];
-        }
+        // Return all registered peers excluding the requesting device itself
+        const peers = rawPeers.filter(p => p.id !== discoveryEngine.deviceId && p.id !== clientDeviceId);
 
-        // Sort so real registered Web Clients (with real device name) come first before generic ARP candidates
-        peers.sort((a, b) => {
-            if (a.isWebClient && !b.isWebClient) return -1;
-            if (!a.isWebClient && b.isWebClient) return 1;
-            return (b.lastSeen || 0) - (a.lastSeen || 0);
-        });
+        // Sort so recently active peers come first
+        peers.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
 
         // Strictly deduplicate by IP and ID
         const seenIps = new Set();

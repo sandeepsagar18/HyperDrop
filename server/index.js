@@ -115,40 +115,34 @@ vaultManager.on('file_deleted', (id) => broadcastWs('file_deleted', { id }));
 vaultManager.on('vault_cleared', () => broadcastWs('vault_cleared', {}));
 
 wss.on('connection', (ws, req) => {
-    // Extract client IP address
-    let clientIp = req.socket.remoteAddress || '127.0.0.1';
+    // Extract client IP address (supporting x-forwarded-for from reverse proxies like Render/Cloudflare)
+    const forwarded = req.headers['x-forwarded-for'];
+    let clientIp = forwarded ? forwarded.split(',')[0].trim() : (req.socket.remoteAddress || '127.0.0.1');
     if (clientIp.startsWith('::ffff:')) {
         clientIp = clientIp.replace('::ffff:', '');
     }
 
     let registeredPeerId = null;
 
-    // Send initial snapshot on client connect (including Host Laptop for remote mobile clients!)
-    const interfaces = getNetworkInterfaces();
-    const ownIps = new Set(['127.0.0.1', '::1', ...interfaces.map(i => i.address)]);
-    const isLocalhost = ownIps.has(clientIp);
-
-    let initialPeers = discoveryEngine.getPeers();
-    if (!isLocalhost) {
-        const hostPeer = {
-            id: discoveryEngine.deviceId,
-            name: discoveryEngine.deviceName,
-            deviceType: discoveryEngine.deviceType,
-            osType: discoveryEngine.osType,
-            avatar: discoveryEngine.avatar,
-            ip: networkMonitor.currentIp,
-            httpPort: PORT,
-            url: `http://${networkMonitor.currentIp}:${PORT}`,
-            isHost: true,
-            lastSeen: Date.now()
-        };
-        initialPeers = [hostPeer, ...initialPeers.filter(p => p.id !== discoveryEngine.deviceId && p.ip !== clientIp)];
-    }
+    // Send initial snapshot on client connect
+    const hostPeer = {
+        id: discoveryEngine.deviceId,
+        name: discoveryEngine.deviceName,
+        deviceType: discoveryEngine.deviceType,
+        osType: discoveryEngine.osType,
+        avatar: discoveryEngine.avatar,
+        ip: networkMonitor.currentIp,
+        httpPort: PORT,
+        url: `http://${networkMonitor.currentIp}:${PORT}`,
+        isHost: true,
+        lastSeen: Date.now()
+    };
+    const allPeers = [hostPeer, ...discoveryEngine.getPeers().filter(p => p.id !== discoveryEngine.deviceId)];
 
     ws.send(JSON.stringify({
         type: 'init_state',
         data: {
-            peers: initialPeers,
+            peers: allPeers,
             workers: workerPool.getAllWorkers(),
             vaultStats: vaultManager.getVaultStats(),
             primaryIp: getPrimaryIp(),

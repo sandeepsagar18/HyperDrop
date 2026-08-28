@@ -202,24 +202,13 @@ class DiscoveryEngine extends EventEmitter {
     }
 
     registerWebClient({ id, name, deviceType, osType, avatar, ip, httpPort }) {
-        const interfaces = getNetworkInterfaces();
-        const ownIps = new Set(['127.0.0.1', '::1', ...interfaces.map(i => i.address)]);
-        
-        // If the web client is running locally on the host machine, do not register it as an external peer
-        if (ownIps.has(ip)) {
+        if (!id || id === this.deviceId) {
             return null;
         }
 
-        const peerId = id || `web_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        const peerId = id;
         
-        // Remove any old peer entry with this IP (e.g. arp_192_168_29_176)
-        for (const [k, p] of this.peers.entries()) {
-            if (p.ip === ip && k !== peerId) {
-                this.peers.delete(k);
-                this.emit('peer_lost', { id: k });
-            }
-        }
-
+        // Remove any old peer entry with this ID
         const isNew = !this.peers.has(peerId);
 
         const peerData = {
