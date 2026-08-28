@@ -96,6 +96,12 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
     router.get('/status', (req, res) => {
         const ifaces = getNetworkInterfaces();
         const primaryIp = getPrimaryIp();
+        
+        const hostHeader = req.get('x-forwarded-host') || req.get('host') || '';
+        const isCloudHost = hostHeader.includes('.onrender.com') || hostHeader.includes('.railway.app') || hostHeader.includes('.fly.dev') || (!hostHeader.includes('localhost') && !hostHeader.includes('127.0.0.1') && !hostHeader.includes('192.168.') && !hostHeader.includes('10.'));
+        const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+        const appUrl = isCloudHost ? `${proto}://${hostHeader}` : `http://${primaryIp}:${discoveryEngine.httpPort}`;
+
         res.json({
             success: true,
             deviceId: discoveryEngine.deviceId,
@@ -103,9 +109,9 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
             deviceType: discoveryEngine.deviceType,
             osType: discoveryEngine.osType,
             httpPort: discoveryEngine.httpPort,
-            primaryIp,
+            primaryIp: isCloudHost ? hostHeader : primaryIp,
             interfaces: ifaces,
-            appUrl: `http://${primaryIp}:${discoveryEngine.httpPort}`
+            appUrl
         });
     });
 
@@ -230,8 +236,19 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
         try {
             const ifaces = getNetworkInterfaces();
             const requestedIp = req.query.ip;
-            const primaryIp = requestedIp || getPrimaryIp();
-            const connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+            
+            // Check if running on cloud host (e.g. Render / Railway / Domain)
+            const hostHeader = req.get('x-forwarded-host') || req.get('host') || '';
+            const isCloudHost = hostHeader.includes('.onrender.com') || hostHeader.includes('.railway.app') || hostHeader.includes('.fly.dev') || (!hostHeader.includes('localhost') && !hostHeader.includes('127.0.0.1') && !hostHeader.includes('192.168.') && !hostHeader.includes('10.'));
+
+            let connectUrl;
+            if (isCloudHost && !requestedIp) {
+                const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+                connectUrl = `${proto}://${hostHeader}`;
+            } else {
+                const primaryIp = requestedIp || getPrimaryIp();
+                connectUrl = `http://${primaryIp}:${discoveryEngine.httpPort}`;
+            }
 
             const qrDataUrl = await QRCode.toDataURL(connectUrl, {
                 width: 320,
@@ -245,7 +262,7 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
             res.json({
                 success: true,
                 url: connectUrl,
-                selectedIp: primaryIp,
+                selectedIp: requestedIp || (isCloudHost ? hostHeader : getPrimaryIp()),
                 interfaces: ifaces,
                 qrCode: qrDataUrl
             });
