@@ -126,16 +126,6 @@ class HyperDropApp {
 
     addOrUpdatePeer(peer) {
         if (!peer || peer.id === this.clientId) return;
-        
-        // If there's an existing peer with same IP, remove old ID
-        if (peer.ip) {
-            for (const [existingId, p] of this.peers.entries()) {
-                if (p.ip === peer.ip && existingId !== peer.id) {
-                    this.peers.delete(existingId);
-                    this.selectedPeerIds.delete(existingId);
-                }
-            }
-        }
 
         const isNew = !this.peers.has(peer.id);
         this.peers.set(peer.id, peer);
@@ -146,24 +136,16 @@ class HyperDropApp {
     }
 
     getUniquePeersList() {
-        const seenIps = new Set();
         const seenIds = new Set();
         const list = [];
         
-        // Convert map values to array and sort so named web clients are processed first
-        const allPeers = Array.from(this.peers.values()).sort((a, b) => {
-            if (a.isWebClient && !b.isWebClient) return -1;
-            if (!a.isWebClient && b.isWebClient) return 1;
-            return (b.lastSeen || 0) - (a.lastSeen || 0);
-        });
+        // Convert map values to array and sort so recently seen active peers come first
+        const allPeers = Array.from(this.peers.values()).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
 
         for (const peer of allPeers) {
-            if (peer.id === this.clientId) continue;
-            const ipKey = peer.ip;
-            const idKey = peer.id;
-            if ((!ipKey || !seenIps.has(ipKey)) && (!idKey || !seenIds.has(idKey))) {
-                if (ipKey) seenIps.add(ipKey);
-                if (idKey) seenIds.add(idKey);
+            if (!peer || !peer.id || peer.id === this.clientId) continue;
+            if (!seenIds.has(peer.id)) {
+                seenIds.add(peer.id);
                 list.push(peer);
             }
         }
