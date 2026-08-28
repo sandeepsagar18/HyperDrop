@@ -331,12 +331,6 @@ class HyperDropApp {
                 this.fetchVaultStats();
                 this.showToast(`📥 Received: ${data.originalName || data.fileName || 'New File'}`);
                 break;
-
-            case 'file_deleted':
-            case 'vault_cleared':
-                this.fetchVaultItems();
-                this.fetchVaultStats();
-                break;
         }
     }
 

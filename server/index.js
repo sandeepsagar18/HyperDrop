@@ -119,8 +119,9 @@ vaultManager.on('file_received', (item) => {
     broadcastWs('file_received', item);
 });
 
-vaultManager.on('file_deleted', (id) => broadcastWs('file_deleted', { id }));
-vaultManager.on('vault_cleared', () => broadcastWs('vault_cleared', {}));
+// Local file deletion should not delete the recipient's saved files on other devices
+// vaultManager.on('file_deleted', (id) => broadcastWs('file_deleted', { id }));
+// vaultManager.on('vault_cleared', () => broadcastWs('vault_cleared', {}));
 
 wss.on('connection', (ws, req) => {
     // Extract client IP address (supporting x-forwarded-for from reverse proxies like Render/Cloudflare)
