@@ -70,18 +70,23 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
           [foundServer],
           workingDirectory: serverDir,
           mode: ProcessStartMode.detached,
+          runInShell: false,
         );
       } catch (e) {
         debugPrint('[SERVER STARTUP ERROR] $e');
       }
     } else {
-      // Fallback: spawn npm start in project folder
+      // Fallback: spawn node directly
       try {
         const repoPath = r'D:\HyperDrop';
         if (Directory(repoPath).existsSync()) {
-          Process.start('npm.cmd', ['start'],
-              workingDirectory: repoPath,
-              mode: ProcessStartMode.detached);
+          Process.start(
+            'node',
+            ['server/index.js'],
+            workingDirectory: repoPath,
+            mode: ProcessStartMode.detached,
+            runInShell: false,
+          );
         }
       } catch (_) {}
     }
