@@ -95,22 +95,14 @@ class DiscoveryEngine extends EventEmitter {
 
     getPeers() {
         const unique = new Map();
-        const interfaces = getNetworkInterfaces();
-        const ownIps = new Set(['127.0.0.1', '::1', ...interfaces.map(i => i.address)]);
 
         for (const peer of this.peers.values()) {
-            if (peer.id === this.deviceId || ownIps.has(peer.ip)) {
+            if (peer.id === this.deviceId) {
                 continue;
             }
-            const key = peer.ip || peer.id;
+            const key = peer.id;
             if (!unique.has(key)) {
                 unique.set(key, peer);
-            } else {
-                // If existing peer is auto-probed and new is web client with proper name, prefer the web client
-                const existing = unique.get(key);
-                if (peer.isWebClient && !existing.isWebClient) {
-                    unique.set(key, peer);
-                }
             }
         }
         return Array.from(unique.values());

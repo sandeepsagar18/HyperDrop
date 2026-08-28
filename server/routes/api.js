@@ -156,16 +156,13 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
         // Sort so recently active peers come first
         peers.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
 
-        // Strictly deduplicate by IP and ID
-        const seenIps = new Set();
+        // Strictly deduplicate by ID
         const seenIds = new Set();
         const deduplicatedPeers = [];
         for (const p of peers) {
-            const ipKey = p.ip;
             const idKey = p.id;
-            if ((!ipKey || !seenIps.has(ipKey)) && (!idKey || !seenIds.has(idKey))) {
-                if (ipKey) seenIps.add(ipKey);
-                if (idKey) seenIds.add(idKey);
+            if (idKey && !seenIds.has(idKey)) {
+                seenIds.add(idKey);
                 deduplicatedPeers.push(p);
             }
         }
