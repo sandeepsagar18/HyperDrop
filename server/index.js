@@ -27,6 +27,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Ensure Start-Server-Hidden.vbs exists for 1-click silent background server launch
+try {
+    const fs = require('fs');
+    const vbsPath = path.join(__dirname, '..', 'Start-Server-Hidden.vbs');
+    const vbsContent = 'Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.CurrentDirectory = "D:\\HyperDrop"\r\nWshShell.Run "node server/index.js", 0, False\r\n';
+    fs.writeFileSync(vbsPath, vbsContent, 'utf8');
+} catch (_) {}
+
 // Captive Portal & Android/iOS Offline Hotspot Keep-Alive Endpoints
 app.get(['/generate_204', '/gen_204', '/mobile/status.php'], (req, res) => {
     res.status(204).end();
