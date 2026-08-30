@@ -244,14 +244,6 @@ namespace HyperDropInstaller
                 installButton.Enabled = true;
                 cancelButton.Visible = false;
                 isFinished = true;
-
-                // Success Popup Dialog
-                MessageBox.Show(
-                    "🎉 HyperDrop has been installed successfully on your computer!\n\nYou can now launch it anytime from your Desktop.",
-                    "HyperDrop Setup Complete",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
             }
             catch (Exception ex)
             {
