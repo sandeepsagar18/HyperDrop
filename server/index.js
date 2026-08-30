@@ -30,8 +30,9 @@ app.use(express.urlencoded({ extended: true }));
 // Ensure Start-Server-Hidden.vbs exists for 1-click silent background server launch
 try {
     const fs = require('fs');
-    const vbsPath = path.join(__dirname, '..', 'Start-Server-Hidden.vbs');
-    const vbsContent = 'Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.CurrentDirectory = "D:\\HyperDrop"\r\nWshShell.Run "node server/index.js", 0, False\r\n';
+    const rootDir = path.resolve(__dirname, '..');
+    const vbsPath = path.join(rootDir, 'Start-Server-Hidden.vbs');
+    const vbsContent = `Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.CurrentDirectory = "${rootDir.replace(/\\/g, '\\\\')}"\r\nWshShell.Run "node server/index.js", 0, False\r\n`;
     fs.writeFileSync(vbsPath, vbsContent, 'utf8');
 } catch (_) {}
 
@@ -132,6 +133,7 @@ wss.on('connection', (ws, req) => {
     }
 
     let registeredPeerId = null;
+    const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'localhost' || clientIp === '::ffff:127.0.0.1';
 
     // Send initial snapshot on client connect
     const hostPeer = {

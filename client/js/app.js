@@ -340,39 +340,10 @@ class HyperDropApp {
         const fileInput = document.getElementById('file-input');
         const folderInput = document.getElementById('folder-input');
 
-        document.getElementById('choose-files-btn').addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileInput.value = '';
-            fileInput.click();
-        });
-
-        document.getElementById('choose-folder-btn').addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if (window.showDirectoryPicker) {
-                try {
-                    const dirHandle = await window.showDirectoryPicker();
-                    const files = await this.readDirectoryHandle(dirHandle, dirHandle.name);
-                    if (files && files.length > 0) {
-                        this.addStagedFiles(files);
-                    }
-                    return;
-                } catch (err) {
-                    if (err.name === 'AbortError') return;
-                    console.warn('[FOLDER] Native directory picker fallback:', err);
-                }
-            }
-
-            folderInput.value = '';
-            folderInput.click();
-        });
-
+        // Dropzone click fallback (if user clicks dropzone background)
         dropzone.addEventListener('click', (e) => {
-            if (e.target.closest('#choose-folder-btn') || e.target.closest('#choose-files-btn')) return;
-            fileInput.value = '';
-            fileInput.click();
+            if (e.target.closest('#choose-folder-btn') || e.target.closest('#choose-files-btn') || e.target.tagName === 'LABEL' || e.target.tagName === 'INPUT') return;
+            if (fileInput) fileInput.click();
         });
 
         dropzone.addEventListener('dragover', (e) => {
@@ -396,7 +367,7 @@ class HyperDropApp {
                         files.push(...entryFiles);
                     }
                 }
-            } else if (e.dataTransfer.files.length) {
+            } else if (e.dataTransfer.files && e.dataTransfer.files.length) {
                 for (let f of e.dataTransfer.files) files.push(f);
             }
 
@@ -405,17 +376,23 @@ class HyperDropApp {
             }
         });
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files && e.target.files.length) {
-                this.addStagedFiles(Array.from(e.target.files));
-            }
-        });
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length) {
+                    this.addStagedFiles(Array.from(e.target.files));
+                }
+                e.target.value = '';
+            });
+        }
 
-        folderInput.addEventListener('change', (e) => {
-            if (e.target.files && e.target.files.length) {
-                this.addStagedFiles(Array.from(e.target.files));
-            }
-        });
+        if (folderInput) {
+            folderInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length) {
+                    this.addStagedFiles(Array.from(e.target.files));
+                }
+                e.target.value = '';
+            });
+        }
 
         // Staged actions
         document.getElementById('clear-staged-btn').addEventListener('click', () => {
@@ -782,6 +759,18 @@ class HyperDropApp {
                 this.openDiagnosticsModal();
             });
         }
+
+        const maxBtn = document.getElementById('preview-maximize-btn');
+        if (maxBtn) {
+            maxBtn.addEventListener('click', () => {
+                const modalCard = document.getElementById('preview-modal-card');
+                if (modalCard) {
+                    const isMax = modalCard.classList.toggle('maximized');
+                    maxBtn.innerHTML = isMax ? '<i class="fa-solid fa-compress"></i>' : '<i class="fa-solid fa-expand"></i>';
+                    maxBtn.title = isMax ? 'Restore Size' : 'Toggle Fullscreen';
+                }
+            });
+        }
         
         document.querySelectorAll('.modal-close-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -844,6 +833,13 @@ class HyperDropApp {
 
         if (id === 'preview-modal') {
             document.getElementById('preview-body').innerHTML = '';
+            const modalCard = document.getElementById('preview-modal-card');
+            const maxBtn = document.getElementById('preview-maximize-btn');
+            if (modalCard) modalCard.classList.remove('maximized');
+            if (maxBtn) {
+                maxBtn.innerHTML = '<i class="fa-solid fa-expand"></i>';
+                maxBtn.title = 'Toggle Fullscreen';
+            }
         }
 
         modal.classList.remove('active');
@@ -1848,16 +1844,20 @@ class HyperDropApp {
 
         if (isPdf) {
             body.innerHTML = `
-                <div style="width:100%; border-radius:8px; overflow:hidden; border:1px solid #1a2c48; background:#040912;">
-                    <iframe src="/api/vault/preview/${item.id}#view=FitH" style="width:100%; height:480px; border:none; display:block;"></iframe>
+                <div style="width:100%; height:100%; min-height:420px; flex:1; border-radius:8px; overflow:hidden; border:1px solid #1a2c48; background:#040912; display:flex;">
+                    <iframe src="/api/vault/preview/${item.id}#view=FitH" style="width:100%; height:100%; flex:1; min-height:420px; border:none; display:block;"></iframe>
                 </div>
             `;
         } else if (item.category === 'image') {
-            body.innerHTML = `<img src="/api/vault/preview/${item.id}" style="max-width:100%; max-height:420px; border-radius:8px; margin:0 auto; display:block;">`;
+            body.innerHTML = `
+                <div style="width:100%; height:100%; flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                    <img src="/api/vault/preview/${item.id}" style="max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; border-radius:8px; display:block;">
+                </div>
+            `;
         } else if (item.category === 'video') {
             body.innerHTML = `
-                <div style="position:relative; width:100%; background:#000; border-radius:8px; overflow:hidden;">
-                    <video id="vault-video-player" controls playsinline preload="auto" style="width:100%; max-height:440px; display:block;" src="/api/vault/preview/${item.id}"></video>
+                <div style="position:relative; width:100%; height:100%; flex:1; min-height:260px; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                    <video id="vault-video-player" controls playsinline preload="auto" style="width:100%; height:100%; max-height:100%; object-fit:contain; display:block;" src="/api/vault/preview/${item.id}"></video>
                 </div>
             `;
 
@@ -1870,14 +1870,20 @@ class HyperDropApp {
             }, 100);
         } else if (item.category === 'audio') {
             body.innerHTML = `
-                <div style="padding:30px; text-align:center;">
-                    <i class="fa-solid fa-music" style="font-size:42px; color:var(--neon-cyan); margin-bottom:16px;"></i>
-                    <audio controls autoplay style="width:100%;" src="/api/vault/preview/${item.id}"></audio>
+                <div style="width:100%; max-width:540px; background:linear-gradient(145deg, #071120 0%, #030812 100%); border:1px solid rgba(0, 242, 254, 0.35); border-radius:16px; padding:24px 20px; box-shadow:0 8px 32px rgba(0,0,0,0.6); text-align:center; box-sizing:border-box; margin:auto;">
+                    <div style="width:68px; height:68px; margin:0 auto 14px; background:radial-gradient(circle, rgba(0, 242, 254, 0.25) 0%, rgba(5, 11, 20, 0.7) 100%); border:2px solid var(--neon-cyan); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 0 20px rgba(0, 242, 254, 0.35);">
+                        <i class="fa-solid fa-music" style="font-size:28px; color:var(--neon-cyan);"></i>
+                    </div>
+                    <h4 style="font-size:15px; font-weight:700; color:var(--text-main); margin:0 0 4px 0; word-break:break-all;">${item.originalName}</h4>
+                    <p style="font-size:12px; color:var(--text-dim); margin:0 0 18px 0;">Audio Track • ${this.formatBytes(item.size)}</p>
+                    <div style="width:100%; background:#040914; border-radius:30px; padding:6px 10px; border:1px solid rgba(0,242,254,0.2); box-sizing:border-box;">
+                        <audio controls autoplay style="width:100%; height:44px; display:block; outline:none;" src="/api/vault/preview/${item.id}"></audio>
+                    </div>
                 </div>
             `;
         } else {
             body.innerHTML = `
-                <div style="padding:24px; text-align:center; color:var(--text-dim);">
+                <div style="padding:24px; text-align:center; color:var(--text-dim); margin:auto;">
                     <i class="fa-solid fa-file-lines" style="font-size:48px; color:var(--neon-cyan); margin-bottom:12px;"></i>
                     <p style="font-size:15px; font-weight:700; color:var(--text-main);">${item.originalName}</p>
                     <p style="font-size:12px; margin-top:4px;">Size: ${this.formatBytes(item.size)} | SHA-256: ${item.hash ? item.hash.substring(0, 24) + '...' : 'Verified'}</p>
@@ -1885,15 +1891,43 @@ class HyperDropApp {
             `;
         }
 
+        const safeName = (item.originalName || 'file').replace(/'/g, "\\'");
         footer.innerHTML = `
-            <button class="pill-btn" style="background:var(--neon-cyan); color:#050b14; font-weight:700; width:100%; justify-content:center; padding:10px;" onclick="window.open('/api/vault/download/${item.id}', '_blank')"><i class="fa-solid fa-download"></i> Download & Save</button>
+            <div style="display:flex; gap:10px; width:100%;">
+                <button class="pill-btn" style="background:var(--neon-cyan); color:#050b14; font-weight:700; flex:1; justify-content:center; padding:11px; border:none; border-radius:8px; cursor:pointer;" onclick="app.downloadVaultItem('${item.id}', '${safeName}')">
+                    <i class="fa-solid fa-download"></i> Download & Save
+                </button>
+                <button class="pill-btn" style="background:rgba(0,242,254,0.15); color:var(--neon-cyan); font-weight:600; border:1px solid rgba(0,242,254,0.4); padding:11px 16px; border-radius:8px; cursor:pointer;" onclick="app.exportVaultItem('${item.id}')" title="Save directly to device storage">
+                    <i class="fa-solid fa-folder-arrow-down"></i> Save to Disk
+                </button>
+            </div>
         `;
 
         modal.classList.add('active');
     }
 
+    downloadVaultItem(id, filename) {
+        try {
+            const link = document.createElement('a');
+            link.href = `/api/vault/download/${id}`;
+            link.download = filename || 'download';
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => {
+                if (link.parentNode) {
+                    link.parentNode.removeChild(link);
+                }
+            }, 200);
+            this.showToast(`📥 Starting download for ${filename || 'file'}...`);
+        } catch (e) {
+            console.error('Download error:', e);
+            window.location.href = `/api/vault/download/${id}`;
+        }
+    }
+
     async exportVaultItem(id) {
         try {
+            this.showToast('Saving file to device storage...');
             const res = await fetch(`/api/vault/export/${id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1901,13 +1935,13 @@ class HyperDropApp {
             });
             const data = await res.json();
             if (data.success) {
-                alert(`File saved to device storage:\n${data.result.savedPath}`);
+                this.showToast(`✓ File saved to: ${data.result.savedPath}`);
                 this.fetchVaultItems();
             } else {
-                alert('Export failed: ' + data.error);
+                this.showToast(`Export failed: ${data.error}`);
             }
         } catch (e) {
-            alert('Export error: ' + e.message);
+            this.showToast(`Export error: ${e.message}`);
         }
     }
 

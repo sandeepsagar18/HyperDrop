@@ -13,8 +13,28 @@ namespace HyperDropInstaller
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            if (args != null && args.Length > 0)
+            {
+                foreach (var arg in args)
+                {
+                    if (arg.Equals("/uninstall", StringComparison.OrdinalIgnoreCase) ||
+                        arg.Equals("-uninstall", StringComparison.OrdinalIgnoreCase) ||
+                        arg.Equals("/u", StringComparison.OrdinalIgnoreCase))
+                    {
+                        InstallerForm.PerformUninstall(silent: false);
+                        return;
+                    }
+                    if (arg.Equals("/uninstall-silent", StringComparison.OrdinalIgnoreCase) ||
+                        arg.Equals("/clean", StringComparison.OrdinalIgnoreCase))
+                    {
+                        InstallerForm.PerformUninstall(silent: true);
+                        return;
+                    }
+                }
+            }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new InstallerForm());
@@ -34,8 +54,6 @@ namespace HyperDropInstaller
         private CheckBox cbLaunch;
         private Panel headerPanel;
         private bool isFinished = false;
-
-        private readonly string sourceDir = @"D:\HyperDrop\flutter\build\windows\x64\runner\Release";
         private readonly string installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "HyperDrop");
 
         public InstallerForm()
@@ -165,6 +183,27 @@ namespace HyperDropInstaller
             this.Controls.Add(cancelButton);
         }
 
+        private string GetSourceDirectory()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string[] candidates = new string[]
+            {
+                Path.Combine(baseDir, "Release"),
+                baseDir,
+                @"D:\HyperDrop\flutter\build\windows\x64\runner\Release",
+                Path.Combine(baseDir, "..", "flutter", "build", "windows", "x64", "runner", "Release")
+            };
+
+            foreach (var path in candidates)
+            {
+                if (Directory.Exists(path) && File.Exists(Path.Combine(path, "hyperdrop_flutter.exe")))
+                {
+                    return Path.GetFullPath(path);
+                }
+            }
+            return @"D:\HyperDrop\flutter\build\windows\x64\runner\Release";
+        }
+
         private async Task StartInstallation()
         {
             if (isFinished)
@@ -204,16 +243,57 @@ namespace HyperDropInstaller
                 progressBar.Value = 35;
                 await Task.Delay(150);
 
-                if (Directory.Exists(sourceDir))
+                string actualSourceDir = GetSourceDirectory();
+                if (Directory.Exists(actualSourceDir))
                 {
-                    CopyDirectory(sourceDir, installDir);
+                    CopyDirectory(actualSourceDir, installDir);
                 }
                 else
                 {
-                    throw new Exception("Release source files not found at: " + sourceDir);
+                    throw new Exception("Release source files not found at: " + actualSourceDir);
                 }
 
-                progressBar.Value = 75;
+                // Ensure server, client, node_modules, and silent vbs are copied into installDir
+                progressBar.Value = 55;
+                statusLabel.Text = "Bundling background engine & assets...";
+                await Task.Delay(100);
+
+                string repoRoot = @"D:\HyperDrop";
+                if (!Directory.Exists(repoRoot))
+                {
+                    repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".."));
+                }
+
+                string[] requiredFolders = new string[] { "server", "client", "node_modules" };
+                foreach (var folder in requiredFolders)
+                {
+                    string targetFolder = Path.Combine(installDir, folder);
+                    if (!Directory.Exists(targetFolder))
+                    {
+                        string sourceFolder = Path.Combine(actualSourceDir, folder);
+                        if (!Directory.Exists(sourceFolder) && Directory.Exists(repoRoot))
+                        {
+                            sourceFolder = Path.Combine(repoRoot, folder);
+                        }
+                        if (Directory.Exists(sourceFolder))
+                        {
+                            CopyDirectory(sourceFolder, targetFolder);
+                        }
+                    }
+                }
+
+                // Generate silent background launcher in installDir
+                try
+                {
+                    string vbsPath = Path.Combine(installDir, "Start-Server-Hidden.vbs");
+                    string vbsContent = "Set WshShell = CreateObject(\"WScript.Shell\")\r\n" +
+                                        "WshShell.CurrentDirectory = \"" + installDir.Replace("\\", "\\\\") + "\"\r\n" +
+                                        "WshShell.Run \"node server/index.js\", 0, False\r\n";
+                    File.WriteAllText(vbsPath, vbsContent);
+                }
+                catch { }
+
+                progressBar.Value = 80;
                 statusLabel.Text = "Creating shortcuts and registering application...";
                 await Task.Delay(150);
 
@@ -278,10 +358,80 @@ namespace HyperDropInstaller
             shortcut.Save();
         }
 
+        public static void PerformUninstall(bool silent = false)
+        {
+            string installPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "HyperDrop");
+
+            try
+            {
+                // 1. Terminate any running HyperDrop processes
+                foreach (var proc in Process.GetProcessesByName("hyperdrop_flutter"))
+                {
+                    try { proc.Kill(); proc.WaitForExit(1000); } catch { }
+                }
+
+                // 2. Remove Shortcuts
+                string desktopShortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "HyperDrop.lnk");
+                if (File.Exists(desktopShortcut))
+                {
+                    try { File.Delete(desktopShortcut); } catch { }
+                }
+
+                string startMenuShortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "HyperDrop.lnk");
+                if (File.Exists(startMenuShortcut))
+                {
+                    try { File.Delete(startMenuShortcut); } catch { }
+                }
+
+                // 3. Remove Registry Uninstall Key
+                try
+                {
+                    Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\HyperDrop", false);
+                }
+                catch { }
+
+                // 4. Clean up installation folder via delayed background deletion
+                if (Directory.Exists(installPath))
+                {
+                    var psi = new ProcessStartInfo("cmd.exe", "/c ping 127.0.0.1 -n 2 > nul & rmdir /s /q \"" + installPath + "\"")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    Process.Start(psi);
+                }
+
+                if (!silent)
+                {
+                    MessageBox.Show("HyperDrop has been successfully uninstalled from your computer.", "HyperDrop Uninstall", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!silent)
+                {
+                    MessageBox.Show("Uninstall error: " + ex.Message, "HyperDrop Uninstall", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
         private static void RegisterUninstall(string installPath, string exePath)
         {
             try
             {
+                // Copy installer as uninstaller binary
+                string currentExe = Process.GetCurrentProcess().MainModule.FileName;
+                string uninstallerPath = Path.Combine(installPath, "Uninstall.exe");
+                if (File.Exists(currentExe) && !currentExe.Equals(uninstallerPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    try { File.Copy(currentExe, uninstallerPath, true); } catch { }
+                }
+
+                string uninstallCommand = File.Exists(uninstallerPath)
+                    ? "\"" + uninstallerPath + "\" /uninstall"
+                    : "powershell.exe -NoProfile -WindowStyle Hidden -Command \"Remove-Item -Path '" + installPath + "' -Recurse -Force\"";
+
                 using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\HyperDrop"))
                 {
                     if (key != null)
@@ -291,7 +441,7 @@ namespace HyperDropInstaller
                         key.SetValue("Publisher", "HyperDrop Team");
                         key.SetValue("DisplayIcon", exePath);
                         key.SetValue("InstallLocation", installPath);
-                        key.SetValue("UninstallString", "cmd.exe /c rmdir /s /q \"" + installPath + "\"");
+                        key.SetValue("UninstallString", uninstallCommand);
                         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
                         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
                     }

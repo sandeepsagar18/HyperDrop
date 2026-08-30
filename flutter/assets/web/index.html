@@ -79,8 +79,8 @@
                 <div class="card-body">
                     <!-- Drop Zone -->
                     <div id="dropzone" class="transmit-dropzone">
-                        <input type="file" id="file-input" multiple accept="*/*" style="display:none;">
-                        <input type="file" id="folder-input" webkitdirectory mozdirectory msdirectory odirectory directory multiple style="display:none;">
+                        <input type="file" id="file-input" multiple accept="*/*" style="position:absolute; opacity:0; width:1px; height:1px; pointer-events:none;">
+                        <input type="file" id="folder-input" webkitdirectory mozdirectory msdirectory odirectory directory multiple style="position:absolute; opacity:0; width:1px; height:1px; pointer-events:none;">
                         
                         <div class="upload-arrow-glow">
                             <i class="fa-solid fa-arrow-up-from-bracket"></i>
@@ -89,12 +89,12 @@
                         <p class="dropzone-subtitle">No size limits • Direct WebRTC P2P DataChannel</p>
 
                         <div class="dropzone-actions">
-                            <button id="choose-files-btn" class="btn-pill-choice">
+                            <label for="file-input" id="choose-files-btn" class="btn-pill-choice" style="user-select: none;">
                                 <i class="fa-solid fa-file"></i> Choose Files
-                            </button>
-                            <button id="choose-folder-btn" class="btn-pill-choice">
+                            </label>
+                            <label for="folder-input" id="choose-folder-btn" class="btn-pill-choice" style="user-select: none;">
                                 <i class="fa-solid fa-folder"></i> Choose Folder
-                            </button>
+                            </label>
                         </div>
                     </div>
 
@@ -342,16 +342,31 @@
 
     <!-- MODAL: In-App Vault Media / File Previewer -->
     <div id="preview-modal" class="modal">
-        <div class="modal-content glass-card" style="max-width: 680px;">
-            <div class="modal-header">
-                <h3 id="preview-title"><i class="fa-solid fa-eye" style="color:var(--neon-cyan);"></i> File Preview</h3>
-                <button class="modal-close-btn">&times;</button>
+        <div id="preview-modal-card" class="modal-content glass-card resizable-preview" style="width: 720px; height: auto;">
+            <div class="modal-header" style="flex-shrink: 0; margin-bottom: 12px;">
+                <h3 id="preview-title" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 90px);"><i class="fa-solid fa-eye" style="color:var(--neon-cyan);"></i> File Preview</h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button id="preview-maximize-btn" class="modal-icon-btn" title="Toggle Fullscreen" style="background: rgba(0, 242, 254, 0.1); border: 1px solid rgba(0, 242, 254, 0.3); color: var(--neon-cyan); border-radius: 8px; width: 32px; height: 32px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px;">
+                        <i class="fa-solid fa-expand"></i>
+                    </button>
+                    <button class="modal-close-btn">&times;</button>
+                </div>
             </div>
-            <div class="modal-body" id="preview-body" style="padding: 16px; min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            <div class="modal-body" id="preview-body" style="padding: 10px 14px; flex: 1; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; box-sizing: border-box; overflow: auto;">
                 <!-- Dynamically rendered video / audio / image / PDF preview -->
             </div>
-            <div class="modal-footer" id="preview-footer" style="display: flex; gap: 8px;">
+            <div class="modal-footer" id="preview-footer" style="flex-shrink: 0; display: flex; gap: 8px; margin-top: 10px;">
                 <!-- Download button -->
+            </div>
+            <div class="modal-resize-handle" title="Drag to resize width and height" style="position: absolute; bottom: 2px; right: 2px; width: 16px; height: 16px; cursor: nwse-resize; opacity: 0.6; pointer-events: none;">
+                <svg viewBox="0 0 16 16" fill="var(--neon-cyan)" style="width: 100%; height: 100%;">
+                    <circle cx="14" cy="14" r="1.5"/>
+                    <circle cx="14" cy="9" r="1.5"/>
+                    <circle cx="9" cy="14" r="1.5"/>
+                    <circle cx="14" cy="4" r="1.5"/>
+                    <circle cx="9" cy="9" r="1.5"/>
+                    <circle cx="4" cy="14" r="1.5"/>
+                </svg>
             </div>
         </div>
     </div>

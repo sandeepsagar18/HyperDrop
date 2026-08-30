@@ -17,6 +17,7 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
   mob_wv.WebViewController? _mobController;
   bool _isInitialized = false;
   bool _isLoading = true;
+  bool _isServerStarting = false;
   final String _appUrl = 'http://127.0.0.1:3000';
 
   @override
@@ -27,23 +28,35 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
 
   Future<void> _ensureServerRunning() async {
     if (!Platform.isWindows) return;
+    if (_isServerStarting) return;
+    _isServerStarting = true;
 
     // 1. Check if already responding
     bool isAlive = await _pingServer();
-    if (isAlive) return;
+    if (isAlive) {
+      _isServerStarting = false;
+      return;
+    }
 
-    // 2. Locate node.exe and server/index.js
+    // 2. Locate node.exe and server/index.js dynamically
+    final appDir = File(Platform.resolvedExecutable).parent.path;
+    final username = Platform.environment['USERNAME'] ?? '';
+
     final candidateNodePaths = [
+      '$appDir\\node.exe',
       'node',
       r'C:\Program Files\nodejs\node.exe',
       r'C:\Program Files (x86)\nodejs\node.exe',
-      r'C:\Users\' + (Platform.environment['USERNAME'] ?? '') + r'\AppData\Roaming\nvm\current\node.exe',
+      if (username.isNotEmpty)
+        'C:\\Users\\$username\\AppData\\Roaming\\nvm\\current\\node.exe',
+      if (username.isNotEmpty)
+        'C:\\Users\\$username\\AppData\\Local\\Programs\\node\\node.exe',
     ];
 
     final candidateServerPaths = [
+      '$appDir\\server\\index.js',
+      '$appDir\\..\\server\\index.js',
       r'D:\HyperDrop\server\index.js',
-      '${Platform.resolvedExecutable.replaceAll(RegExp(r'[^\\]+$'), '')}server\\index.js',
-      '${Platform.resolvedExecutable.replaceAll(RegExp(r'[^\\]+$'), '')}..\\server\\index.js',
     ];
 
     String? foundNode;
@@ -65,43 +78,47 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
     if (foundNode != null && foundServer != null) {
       try {
         final serverDir = File(foundServer).parent.parent.path;
-        Process.start(
-          foundNode,
-          [foundServer],
-          workingDirectory: serverDir,
-          mode: ProcessStartMode.detached,
-          runInShell: false,
-        );
+        
+        // Launch Node server silently in background without creating any console window
+        final vbsPath = '$serverDir\\Start-Server-Hidden.vbs';
+        if (File(vbsPath).existsSync()) {
+          Process.start(
+            'wscript.exe',
+            [vbsPath],
+            workingDirectory: serverDir,
+            mode: ProcessStartMode.detached,
+          );
+        } else {
+          // Silent fallback via powershell hidden process
+          Process.start(
+            'powershell.exe',
+            [
+              '-WindowStyle',
+              'Hidden',
+              '-NoProfile',
+              '-Command',
+              'Start-Process -FilePath "$foundNode" -ArgumentList "$foundServer" -WorkingDirectory "$serverDir" -WindowStyle Hidden'
+            ],
+            mode: ProcessStartMode.detached,
+          );
+        }
       } catch (e) {
         debugPrint('[SERVER STARTUP ERROR] $e');
       }
-    } else {
-      // Fallback: spawn node directly
-      try {
-        const repoPath = r'D:\HyperDrop';
-        if (Directory(repoPath).existsSync()) {
-          Process.start(
-            'node',
-            ['server/index.js'],
-            workingDirectory: repoPath,
-            mode: ProcessStartMode.detached,
-            runInShell: false,
-          );
-        }
-      } catch (_) {}
     }
 
-    // 3. Poll for up to 6 seconds until server is ready
-    for (int i = 0; i < 12; i++) {
+    // 3. Poll until server is ready (up to 8 seconds)
+    for (int i = 0; i < 16; i++) {
       await Future.delayed(const Duration(milliseconds: 500));
       if (await _pingServer()) break;
     }
+    _isServerStarting = false;
   }
 
   Future<bool> _pingServer() async {
     try {
       final client = HttpClient();
-      client.connectionTimeout = const Duration(milliseconds: 500);
+      client.connectionTimeout = const Duration(milliseconds: 400);
       final req = await client.getUrl(Uri.parse('http://127.0.0.1:3000/api/status'));
       final res = await req.close();
       return res.statusCode == 200;
@@ -117,14 +134,26 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
         await _ensureServerRunning();
         await _winController.initialize();
         await _winController.setBackgroundColor(const Color(0xFF030914));
-        await _winController.setPopupWindowPolicy(win_wv.WebviewPopupWindowPolicy.deny);
-        await _winController.loadUrl(_appUrl);
+        await _winController.setPopupWindowPolicy(win_wv.WebviewPopupWindowPolicy.allow);
+
+        int loadAttempts = 0;
+        _winController.onLoadError.listen((error) async {
+          debugPrint('[WEBVIEW LOAD ERROR] $error');
+          if (loadAttempts < 3 && mounted) {
+            loadAttempts++;
+            await Future.delayed(const Duration(seconds: 1));
+            await _ensureServerRunning();
+            await _winController.loadUrl(_appUrl);
+          }
+        });
 
         _winController.loadingState.listen((state) {
           if (state == win_wv.LoadingState.navigationCompleted && mounted) {
             setState(() => _isLoading = false);
           }
         });
+
+        await _winController.loadUrl(_appUrl);
 
         if (mounted) {
           setState(() => _isInitialized = true);
@@ -135,7 +164,7 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
       return;
     }
 
-    // 2. Android & Mobile Platform Engine - loads the full bundled Cyberpunk Web Client
+    // 2. Android & Mobile Platform Engine - loads the bundled Cyberpunk Web Client
     try {
       final controller = mob_wv.WebViewController()
         ..setJavaScriptMode(mob_wv.JavaScriptMode.unrestricted)
@@ -151,11 +180,10 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
           ),
         );
 
-      // Load bundled Cyberpunk Web Client from local assets (works offline on all phones!)
       try {
         await controller.loadFlutterAsset('assets/web/index.html');
       } catch (_) {
-        await controller.loadRequest(Uri.parse('http://192.168.29.137:3000'));
+        await controller.loadRequest(Uri.parse('http://127.0.0.1:3000'));
       }
 
       _mobController = controller;
