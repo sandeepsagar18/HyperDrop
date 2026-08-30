@@ -1777,7 +1777,8 @@ class HyperDropApp {
     // --- App Vault ---
     async fetchVaultItems() {
         try {
-            const res = await fetch('/api/vault/items');
+            const url = this.clientId ? `/api/vault/items?deviceId=${encodeURIComponent(this.clientId)}` : '/api/vault/items';
+            const res = await fetch(url);
             const data = await res.json();
             if (data.success) {
                 this.vaultItems = data.items;

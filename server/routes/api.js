@@ -452,8 +452,9 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
 
     // 6. App Vault Management
     router.get('/vault/items', (req, res) => {
-        const { category, search } = req.query;
-        const items = vaultManager.getVaultItems({ category, search });
+        const { category, search, peerId, deviceId } = req.query;
+        const targetId = peerId || deviceId;
+        const items = vaultManager.getVaultItems({ category, search, peerId: targetId });
         res.json({ success: true, items });
     });
 

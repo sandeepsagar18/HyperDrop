@@ -250,6 +250,15 @@ class VaultManager extends EventEmitter {
 
     getVaultItems({ category, search, peerId } = {}) {
         let list = [...this.files];
+        
+        // Scope to current device: show files intended for this device, broadcast to all, or sent by this device
+        if (peerId) {
+            list = list.filter(item => {
+                if (!item.targetPeerId || item.targetPeerId === 'all') return true;
+                return item.targetPeerId === peerId || item.senderId === peerId;
+            });
+        }
+
         if (category && category !== 'all') {
             list = list.filter(item => item.category === category);
         }
