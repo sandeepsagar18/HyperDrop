@@ -174,7 +174,12 @@ namespace HyperDropInstaller
                     string exePath = Path.Combine(installDir, "hyperdrop_flutter.exe");
                     if (File.Exists(exePath))
                     {
-                        Process.Start(exePath);
+                        var psi = new ProcessStartInfo(exePath)
+                        {
+                            WorkingDirectory = installDir,
+                            UseShellExecute = true
+                        };
+                        Process.Start(psi);
                     }
                 }
                 this.Close();
