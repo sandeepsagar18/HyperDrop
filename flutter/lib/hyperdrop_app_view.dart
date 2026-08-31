@@ -61,11 +61,12 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
 
     String? foundNode;
     for (final np in candidateNodePaths) {
-      if (np == 'node' || File(np).existsSync()) {
+      if (np != 'node' && File(np).existsSync()) {
         foundNode = np;
         break;
       }
     }
+    foundNode ??= 'node';
 
     String? foundServer;
     for (final sp in candidateServerPaths) {
@@ -75,32 +76,35 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
       }
     }
 
-    if (foundNode != null && foundServer != null) {
+    if (foundServer != null) {
       try {
         final serverDir = File(foundServer).parent.parent.path;
         
-        // Launch Node server silently in background without creating any console window
-        final vbsPath = '$serverDir\\Start-Server-Hidden.vbs';
-        if (File(vbsPath).existsSync()) {
+        // Prefer direct detached process execution for bundled node
+        if (foundNode != 'node' && File(foundNode).existsSync()) {
           Process.start(
-            'wscript.exe',
-            [vbsPath],
+            foundNode,
+            [foundServer],
             workingDirectory: serverDir,
             mode: ProcessStartMode.detached,
           );
         } else {
-          // Silent fallback via powershell hidden process
-          Process.start(
-            'powershell.exe',
-            [
-              '-WindowStyle',
-              'Hidden',
-              '-NoProfile',
-              '-Command',
-              'Start-Process -FilePath "$foundNode" -ArgumentList "$foundServer" -WorkingDirectory "$serverDir" -WindowStyle Hidden'
-            ],
-            mode: ProcessStartMode.detached,
-          );
+          final vbsPath = '$serverDir\\Start-Server-Hidden.vbs';
+          if (File(vbsPath).existsSync()) {
+            Process.start(
+              'wscript.exe',
+              [vbsPath],
+              workingDirectory: serverDir,
+              mode: ProcessStartMode.detached,
+            );
+          } else {
+            Process.start(
+              'node',
+              [foundServer],
+              workingDirectory: serverDir,
+              mode: ProcessStartMode.detached,
+            );
+          }
         }
       } catch (e) {
         debugPrint('[SERVER STARTUP ERROR] $e');

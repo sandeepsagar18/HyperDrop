@@ -27,12 +27,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Ensure Start-Server-Hidden.vbs exists for 1-click silent background server launch
 try {
     const fs = require('fs');
     const rootDir = path.resolve(__dirname, '..');
     const vbsPath = path.join(rootDir, 'Start-Server-Hidden.vbs');
-    const vbsContent = `Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.CurrentDirectory = "${rootDir.replace(/\\/g, '\\\\')}"\r\nWshShell.Run "node server/index.js", 0, False\r\n`;
+    const vbsContent = `Set WshShell = CreateObject("WScript.Shell")\r\nSet FSO = CreateObject("Scripting.FileSystemObject")\r\nappDir = FSO.GetParentFolderName(WScript.ScriptFullName)\r\nWshShell.CurrentDirectory = appDir\r\nnodeExe = "node"\r\nIf FSO.FileExists(appDir & "\\node.exe") Then\r\n    nodeExe = """" & appDir & "\\node.exe"""\r\nEnd If\r\nWshShell.Run nodeExe & " server/index.js", 0, False\r\n`;
     fs.writeFileSync(vbsPath, vbsContent, 'utf8');
 } catch (_) {}
 
