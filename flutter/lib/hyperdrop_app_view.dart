@@ -131,7 +131,24 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
     }
   }
 
+  String? _errorMessage;
+
+  void _openInExternalBrowser() {
+    try {
+      if (Platform.isWindows) {
+        Process.start('cmd', ['/c', 'start', _appUrl]);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _initWebView() async {
+    if (mounted) {
+      setState(() {
+        _errorMessage = null;
+        _isLoading = true;
+      });
+    }
+
     // 1. Windows Platform Engine
     if (Platform.isWindows) {
       try {
@@ -164,6 +181,11 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
         }
       } catch (e) {
         debugPrint('[HYPERDROP WINDOWS ERROR] $e');
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'WebView2 initialization note: $e\nYou can still access HyperDrop directly in your browser.';
+          });
+        }
       }
       return;
     }
@@ -209,6 +231,70 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_errorMessage != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF030914),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: const Color(0xFF00F2FE).withOpacity(0.15),
+                    border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.4)),
+                  ),
+                  child: const Icon(Icons.hub, color: Color(0xFF00F2FE), size: 36),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'HyperDrop Engine Running',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Local server active on $_appUrl',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 13,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 28),
+                ElevatedButton.icon(
+                  onPressed: _openInExternalBrowser,
+                  icon: const Icon(Icons.open_in_browser, color: Color(0xFF030914)),
+                  label: const Text(
+                    'Open HyperDrop in Browser',
+                    style: TextStyle(color: Color(0xFF030914), fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00F2FE),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: _initWebView,
+                  child: const Text('Retry In-App Window', style: TextStyle(color: Color(0xFF00F2FE))),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (!_isInitialized) {
       return Scaffold(
         backgroundColor: const Color(0xFF030914),
