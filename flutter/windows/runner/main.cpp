@@ -16,11 +16,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
         ::ShowWindow(existingHwnd, SW_RESTORE);
       }
       ::SetForegroundWindow(existingHwnd);
+      if (hMutex) {
+        ::CloseHandle(hMutex);
+      }
+      return EXIT_SUCCESS;
     }
-    if (hMutex) {
-      ::CloseHandle(hMutex);
-    }
-    return EXIT_SUCCESS;
   }
 
   // Attach to console when present (e.g., 'flutter run') or create a

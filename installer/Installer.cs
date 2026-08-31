@@ -211,7 +211,8 @@ namespace HyperDropInstaller
             {
                 if (cbLaunch.Checked)
                 {
-                    string exePath = Path.Combine(installDir, "hyperdrop_flutter.exe");
+                    string exePath = Path.Combine(installDir, "HyperDrop.exe");
+                    if (!File.Exists(exePath)) exePath = Path.Combine(installDir, "hyperdrop_flutter.exe");
                     if (File.Exists(exePath))
                     {
                         var psi = new ProcessStartInfo(exePath)
@@ -369,7 +370,11 @@ namespace HyperDropInstaller
                 statusLabel.Text = "Creating shortcuts and registering application...";
                 await Task.Delay(100);
 
-                string exePath = Path.Combine(installDir, "hyperdrop_flutter.exe");
+                string exePath = Path.Combine(installDir, "HyperDrop.exe");
+                if (!File.Exists(exePath))
+                {
+                    exePath = Path.Combine(installDir, "hyperdrop_flutter.exe");
+                }
 
                 // Desktop shortcut
                 if (cbDesktop.Checked)
