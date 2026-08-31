@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Reflection;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 
@@ -230,72 +231,143 @@ namespace HyperDropInstaller
 
             try
             {
-                statusLabel.Text = "Creating installation directory...";
-                progressBar.Value = 15;
-                await Task.Delay(100);
+                statusLabel.Text = "Preparing installation...";
+                progressBar.Value = 10;
+                await Task.Delay(50);
 
                 if (!Directory.Exists(installDir))
                 {
                     Directory.CreateDirectory(installDir);
                 }
 
-                statusLabel.Text = "Copying program files...";
-                progressBar.Value = 35;
-                await Task.Delay(150);
+                bool extractedFromZip = false;
 
-                string actualSourceDir = GetSourceDirectory();
-                if (Directory.Exists(actualSourceDir))
+                // 1. Check for embedded payload.zip resource
+                var assembly = Assembly.GetExecutingAssembly();
+                Stream embeddedZipStream = assembly.GetManifestResourceStream("payload.zip");
+                if (embeddedZipStream == null)
                 {
-                    CopyDirectory(actualSourceDir, installDir);
-                }
-                else
-                {
-                    throw new Exception("Release source files not found at: " + actualSourceDir);
-                }
-
-                // Ensure server, client, node_modules, and silent vbs are copied into installDir
-                progressBar.Value = 55;
-                statusLabel.Text = "Bundling background engine & assets...";
-                await Task.Delay(100);
-
-                string repoRoot = @"D:\HyperDrop";
-                if (!Directory.Exists(repoRoot))
-                {
-                    repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".."));
-                }
-
-                string[] requiredFolders = new string[] { "server", "client", "node_modules" };
-                foreach (var folder in requiredFolders)
-                {
-                    string targetFolder = Path.Combine(installDir, folder);
-                    if (!Directory.Exists(targetFolder))
+                    foreach (var name in assembly.GetManifestResourceNames())
                     {
-                        string sourceFolder = Path.Combine(actualSourceDir, folder);
-                        if (!Directory.Exists(sourceFolder) && Directory.Exists(repoRoot))
+                        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                         {
-                            sourceFolder = Path.Combine(repoRoot, folder);
-                        }
-                        if (Directory.Exists(sourceFolder))
-                        {
-                            CopyDirectory(sourceFolder, targetFolder);
+                            embeddedZipStream = assembly.GetManifestResourceStream(name);
+                            break;
                         }
                     }
                 }
 
-                // Generate silent background launcher in installDir
+                if (embeddedZipStream != null)
+                {
+                    using (embeddedZipStream)
+                    using (var archive = new ZipArchive(embeddedZipStream, ZipArchiveMode.Read))
+                    {
+                        int total = Math.Max(1, archive.Entries.Count);
+                        int current = 0;
+                        foreach (var entry in archive.Entries)
+                        {
+                            current++;
+                            if (string.IsNullOrEmpty(entry.Name))
+                            {
+                                Directory.CreateDirectory(Path.Combine(installDir, entry.FullName));
+                                continue;
+                            }
+                            string destPath = Path.Combine(installDir, entry.FullName);
+                            string destDir = Path.GetDirectoryName(destPath);
+                            if (!Directory.Exists(destDir))
+                            {
+                                Directory.CreateDirectory(destDir);
+                            }
+                            entry.ExtractToFile(destPath, true);
+
+                            int pct = 10 + (int)(((double)current / total) * 75);
+                            progressBar.Value = Math.Min(pct, 85);
+                            statusLabel.Text = "Installing: " + entry.Name;
+                        }
+                    }
+                    extractedFromZip = true;
+                }
+
+                // 2. Check for adjacent zip file if not embedded
+                if (!extractedFromZip)
+                {
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                    string[] zipNames = new string[] { "payload.zip", "HyperDrop-Windows-v2.0.0.zip", "HyperDrop-Windows-v1.0.1.zip" };
+                    foreach (var z in zipNames)
+                    {
+                        string zp = Path.Combine(baseDir, z);
+                        if (File.Exists(zp))
+                        {
+                            using (var fs = File.OpenRead(zp))
+                            using (var archive = new ZipArchive(fs, ZipArchiveMode.Read))
+                            {
+                                int total = Math.Max(1, archive.Entries.Count);
+                                int current = 0;
+                                foreach (var entry in archive.Entries)
+                                {
+                                    current++;
+                                    if (string.IsNullOrEmpty(entry.Name))
+                                    {
+                                        Directory.CreateDirectory(Path.Combine(installDir, entry.FullName));
+                                        continue;
+                                    }
+                                    string destPath = Path.Combine(installDir, entry.FullName);
+                                    string destDir = Path.GetDirectoryName(destPath);
+                                    if (!Directory.Exists(destDir))
+                                    {
+                                        Directory.CreateDirectory(destDir);
+                                    }
+                                    entry.ExtractToFile(destPath, true);
+
+                                    int pct = 10 + (int)(((double)current / total) * 75);
+                                    progressBar.Value = Math.Min(pct, 85);
+                                    statusLabel.Text = "Installing: " + entry.Name;
+                                }
+                            }
+                            extractedFromZip = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 3. Fallback to copying from directory
+                if (!extractedFromZip)
+                {
+                    statusLabel.Text = "Copying program files...";
+                    progressBar.Value = 35;
+                    await Task.Delay(100);
+
+                    string actualSourceDir = GetSourceDirectory();
+                    if (Directory.Exists(actualSourceDir))
+                    {
+                        CopyDirectory(actualSourceDir, installDir);
+                    }
+                    else
+                    {
+                        throw new Exception("Installation files could not be located.");
+                    }
+                }
+
+                // Generate/Ensure silent background launcher in installDir
                 try
                 {
                     string vbsPath = Path.Combine(installDir, "Start-Server-Hidden.vbs");
                     string vbsContent = "Set WshShell = CreateObject(\"WScript.Shell\")\r\n" +
-                                        "WshShell.CurrentDirectory = \"" + installDir.Replace("\\", "\\\\") + "\"\r\n" +
-                                        "WshShell.Run \"node server/index.js\", 0, False\r\n";
+                                        "Set FSO = CreateObject(\"Scripting.FileSystemObject\")\r\n" +
+                                        "appDir = FSO.GetParentFolderName(WScript.ScriptFullName)\r\n" +
+                                        "WshShell.CurrentDirectory = appDir\r\n" +
+                                        "nodeExe = \"node\"\r\n" +
+                                        "If FSO.FileExists(appDir & \"\\node.exe\") Then\r\n" +
+                                        "    nodeExe = \"\"\"\" & appDir & \"\\node.exe\"\"\"\r\n" +
+                                        "End If\r\n" +
+                                        "WshShell.Run nodeExe & \" server/index.js\", 0, False\r\n";
                     File.WriteAllText(vbsPath, vbsContent);
                 }
                 catch { }
 
-                progressBar.Value = 80;
+                progressBar.Value = 90;
                 statusLabel.Text = "Creating shortcuts and registering application...";
-                await Task.Delay(150);
+                await Task.Delay(100);
 
                 string exePath = Path.Combine(installDir, "hyperdrop_flutter.exe");
 
