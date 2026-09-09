@@ -1293,6 +1293,9 @@ class HyperDropApp {
 
         // 1. Get Transport
         const transport = await this.connectionManager.getTransportForPeer(peer);
+        if (transport && typeof transport.connect === 'function') {
+            await transport.connect({ clientId: this.clientId, clientName: this.clientName || 'Laptop' });
+        }
 
         // Dynamic Adaptive Chunk Sizing for Large & Massive Files
         let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB default
@@ -1307,7 +1310,9 @@ class HyperDropApp {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
         const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(0);
 
-        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Adaptive Chunks to ${peer.name}`);
+        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Adaptive Chunks (${totalChunks} chunks) to ${peer.name}`);
+
+        const abortController = new AbortController();
 
         const workerData = {
             id: workerId,
@@ -1321,25 +1326,15 @@ class HyperDropApp {
             speedMBs: 0.0,
             speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: `Local Wi-Fi (${chunkSizeMB}MB Parallel)`,
-            startTime: Date.now()
+            transportMode: `Local Wi-Fi (${chunkSizeMB}MB Chunks)`,
+            startTime: Date.now(),
+            abortController: abortController
         };
 
         this.workers.set(workerId, workerData);
         this.renderTransferEngine();
 
         try {
-            // High-speed direct streaming upload for mobile Safari/Chrome
-            const formData = new FormData();
-            formData.append('file', file, fileName);
-            formData.append('senderName', this.clientName || 'Phone (Web Client)');
-            formData.append('targetPeerId', peer.id || 'host');
-
-            const uploadEndpoint = `${window.location.origin}/api/vault/direct-upload`;
-            const xhr = new XMLHttpRequest();
-            workerData.xhr = xhr;
-            xhr.open('POST', uploadEndpoint, true);
-
             // Notify recipient peer of incoming file transfer immediately
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 this.ws.send(JSON.stringify({
@@ -1360,88 +1355,92 @@ class HyperDropApp {
                 }));
             }
 
-            let lastDirectTime = Date.now();
-            let lastDirectBytes = 0;
+            let bytesTransferred = 0;
+            let lastTime = Date.now();
+            let lastBytes = 0;
 
-            xhr.upload.onprogress = (e) => {
+            // Check if resumable transfer
+            let startChunkIndex = 0;
+            if (typeof transport.checkResumeStatus === 'function') {
+                try {
+                    const resumeInfo = await transport.checkResumeStatus(workerId);
+                    if (resumeInfo && resumeInfo.startChunkIndex > 0) {
+                        startChunkIndex = resumeInfo.startChunkIndex;
+                        bytesTransferred = Math.min(file.size, startChunkIndex * CHUNK_SIZE);
+                        workerData.bytesTransferred = bytesTransferred;
+                        workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+                        console.log(`[TRANSFER] Resuming "${fileName}" from chunk ${startChunkIndex}/${totalChunks}`);
+                    }
+                } catch (_) {}
+            }
+
+            // Stream chunks sequentially with low memory overhead
+            for (let i = startChunkIndex; i < totalChunks; i++) {
                 if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                    try {
-                        xhr.upload.onprogress = null;
-                        xhr.abort();
-                    } catch (err) {}
+                    console.log(`[TRANSFER] Aborted "${fileName}" at chunk ${i}/${totalChunks}`);
                     return;
                 }
 
-                if (e.lengthComputable) {
-                    workerData.bytesTransferred = e.loaded;
-                    workerData.percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+                const startByte = i * CHUNK_SIZE;
+                const endByte = Math.min(file.size, startByte + CHUNK_SIZE);
+                const chunkBlob = file.slice(startByte, endByte);
 
-                    const now = Date.now();
-                    const deltaMs = now - lastDirectTime;
-                    if (deltaMs >= 150 || e.loaded >= e.total) {
-                        const deltaBytes = e.loaded - lastDirectBytes;
-                        const speedBps = (deltaBytes / (deltaMs / 1000));
-                        workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                        workerData.speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
-                        if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
-                        const rem = e.total - e.loaded;
-                        workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+                const chunkResult = await transport.sendChunk(chunkBlob, {
+                    fileId: workerId,
+                    fileName: fileName,
+                    fileSize: file.size,
+                    chunkIndex: i,
+                    totalChunks: totalChunks,
+                    startByte: startByte,
+                    senderId: this.clientId,
+                    senderName: this.clientName || 'Laptop',
+                    signal: abortController.signal
+                });
 
-                        lastDirectTime = now;
-                        lastDirectBytes = e.loaded;
-                        this.renderTransferEngine();
+                if (chunkResult && chunkResult.cancelled) {
+                    return;
+                }
 
-                        // Live progress update to recipient device
-                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            this.ws.send(JSON.stringify({
-                                type: 'transfer_stream_progress',
-                                data: {
-                                    fileId: workerId,
-                                    fileName: fileName,
-                                    fileSize: file.size,
-                                    bytesTransferred: e.loaded,
-                                    percent: workerData.percent,
-                                    speedMBs: workerData.speedMBs,
-                                    etaSeconds: workerData.etaSeconds,
-                                    senderId: this.clientId,
-                                    senderName: this.clientName || 'Laptop',
-                                    targetPeerId: peer.id || 'all',
-                                    status: 'receiving'
-                                }
-                            }));
-                        }
+                bytesTransferred += chunkBlob.size;
+                workerData.bytesTransferred = bytesTransferred;
+                workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+
+                const now = Date.now();
+                const deltaMs = now - lastTime;
+                if (deltaMs >= 150 || i === totalChunks - 1) {
+                    const deltaBytes = bytesTransferred - lastBytes;
+                    const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
+                    workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                    workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
+                    if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
+                    const rem = Math.max(0, file.size - bytesTransferred);
+                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+
+                    lastTime = now;
+                    lastBytes = bytesTransferred;
+                    this.renderTransferEngine();
+
+                    // Live progress update to recipient device
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({
+                            type: 'transfer_stream_progress',
+                            data: {
+                                fileId: workerId,
+                                fileName: fileName,
+                                fileSize: file.size,
+                                bytesTransferred: bytesTransferred,
+                                percent: workerData.percent,
+                                speedMBs: workerData.speedMBs,
+                                etaSeconds: workerData.etaSeconds,
+                                senderId: this.clientId,
+                                senderName: this.clientName || 'Laptop',
+                                targetPeerId: peer.id || 'all',
+                                status: 'receiving'
+                            }
+                        }));
                     }
                 }
-            };
-
-            await new Promise((resolve, reject) => {
-                xhr.onload = () => {
-                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                        return resolve();
-                    }
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve(xhr.response);
-                    } else {
-                        reject(new Error(`Server returned ${xhr.status}: ${xhr.statusText}`));
-                    }
-                };
-                xhr.onerror = () => {
-                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                        return resolve();
-                    }
-                    reject(new Error('Network error (check Wi-Fi connection)'));
-                };
-                xhr.ontimeout = () => {
-                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                        return resolve();
-                    }
-                    reject(new Error('Upload timed out'));
-                };
-                xhr.onabort = () => {
-                    resolve();
-                };
-                xhr.send(formData);
-            });
+            }
 
             if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
                 return;
@@ -1494,32 +1493,32 @@ class HyperDropApp {
         if (this.cancelledTransferIds.has(data.fileId)) {
             return; // Ignore if user cancelled
         }
-        // If this client is not the sender, track as incoming receiver queue item
+        if (data.status === 'cancelled' || data.isCancelled) {
+            this.cancelledTransferIds.add(data.fileId);
+            if (data.fileName) this.cancelledTransferIds.add(data.fileName);
+            this.workers.delete(data.fileId);
+            this.renderTransferEngine();
+            return;
+        }
+
         const existing = this.workers.get(data.fileId) || {
             id: data.fileId,
             fileName: data.fileName,
             fileSize: data.fileSize,
-            isIncoming: true,
-            senderName: data.senderName,
             status: 'receiving',
             bytesTransferred: 0,
             percent: 0,
             speedMBs: 0.0,
+            speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: data.connectionPath || 'Direct P2P (WebRTC)',
+            transportMode: 'Incoming Stream',
             startTime: Date.now()
         };
-
-        const deltaBytes = Math.max(0, data.bytesTransferred - (existing.bytesTransferred || 0));
-        this.totalBytesMoved += deltaBytes;
-
-        if (data.speedMBs > this.peakSpeedMBs) {
-            this.peakSpeedMBs = data.speedMBs;
-        }
 
         existing.bytesTransferred = data.bytesTransferred;
         existing.percent = data.percent;
         existing.speedMBs = data.speedMBs || 0.0;
+        existing.speedMbps = parseFloat(((data.speedMBs || 0) * 8).toFixed(1));
         existing.etaSeconds = data.etaSeconds || 0;
         existing.status = 'receiving';
         if (data.connectionPath) existing.transportMode = data.connectionPath;
@@ -1542,6 +1541,12 @@ class HyperDropApp {
                 if (w.id) this.cancelledTransferIds.add(w.id);
                 if (w.fileName) this.cancelledTransferIds.add(w.fileName);
                 if (w.fileId) this.cancelledTransferIds.add(w.fileId);
+
+                if (w.abortController) {
+                    try {
+                        w.abortController.abort();
+                    } catch (e) {}
+                }
 
                 if (w.xhr) {
                     try {

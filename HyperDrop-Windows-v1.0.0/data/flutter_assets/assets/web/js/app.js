@@ -126,16 +126,6 @@ class HyperDropApp {
 
     addOrUpdatePeer(peer) {
         if (!peer || peer.id === this.clientId) return;
-        
-        // If there's an existing peer with same IP, remove old ID
-        if (peer.ip) {
-            for (const [existingId, p] of this.peers.entries()) {
-                if (p.ip === peer.ip && existingId !== peer.id) {
-                    this.peers.delete(existingId);
-                    this.selectedPeerIds.delete(existingId);
-                }
-            }
-        }
 
         const isNew = !this.peers.has(peer.id);
         this.peers.set(peer.id, peer);
@@ -146,24 +136,16 @@ class HyperDropApp {
     }
 
     getUniquePeersList() {
-        const seenIps = new Set();
         const seenIds = new Set();
         const list = [];
         
-        // Convert map values to array and sort so named web clients are processed first
-        const allPeers = Array.from(this.peers.values()).sort((a, b) => {
-            if (a.isWebClient && !b.isWebClient) return -1;
-            if (!a.isWebClient && b.isWebClient) return 1;
-            return (b.lastSeen || 0) - (a.lastSeen || 0);
-        });
+        // Convert map values to array and sort so recently seen active peers come first
+        const allPeers = Array.from(this.peers.values()).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
 
         for (const peer of allPeers) {
-            if (peer.id === this.clientId) continue;
-            const ipKey = peer.ip;
-            const idKey = peer.id;
-            if ((!ipKey || !seenIps.has(ipKey)) && (!idKey || !seenIds.has(idKey))) {
-                if (ipKey) seenIps.add(ipKey);
-                if (idKey) seenIds.add(idKey);
+            if (!peer || !peer.id || peer.id === this.clientId) continue;
+            if (!seenIds.has(peer.id)) {
+                seenIds.add(peer.id);
                 list.push(peer);
             }
         }
@@ -349,12 +331,6 @@ class HyperDropApp {
                 this.fetchVaultStats();
                 this.showToast(`📥 Received: ${data.originalName || data.fileName || 'New File'}`);
                 break;
-
-            case 'file_deleted':
-            case 'vault_cleared':
-                this.fetchVaultItems();
-                this.fetchVaultStats();
-                break;
         }
     }
 
@@ -364,39 +340,10 @@ class HyperDropApp {
         const fileInput = document.getElementById('file-input');
         const folderInput = document.getElementById('folder-input');
 
-        document.getElementById('choose-files-btn').addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileInput.value = '';
-            fileInput.click();
-        });
-
-        document.getElementById('choose-folder-btn').addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if (window.showDirectoryPicker) {
-                try {
-                    const dirHandle = await window.showDirectoryPicker();
-                    const files = await this.readDirectoryHandle(dirHandle, dirHandle.name);
-                    if (files && files.length > 0) {
-                        this.addStagedFiles(files);
-                    }
-                    return;
-                } catch (err) {
-                    if (err.name === 'AbortError') return;
-                    console.warn('[FOLDER] Native directory picker fallback:', err);
-                }
-            }
-
-            folderInput.value = '';
-            folderInput.click();
-        });
-
+        // Dropzone click fallback (if user clicks dropzone background)
         dropzone.addEventListener('click', (e) => {
-            if (e.target.closest('#choose-folder-btn') || e.target.closest('#choose-files-btn')) return;
-            fileInput.value = '';
-            fileInput.click();
+            if (e.target.closest('#choose-folder-btn') || e.target.closest('#choose-files-btn') || e.target.tagName === 'LABEL' || e.target.tagName === 'INPUT') return;
+            if (fileInput) fileInput.click();
         });
 
         dropzone.addEventListener('dragover', (e) => {
@@ -420,7 +367,7 @@ class HyperDropApp {
                         files.push(...entryFiles);
                     }
                 }
-            } else if (e.dataTransfer.files.length) {
+            } else if (e.dataTransfer.files && e.dataTransfer.files.length) {
                 for (let f of e.dataTransfer.files) files.push(f);
             }
 
@@ -429,17 +376,23 @@ class HyperDropApp {
             }
         });
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files && e.target.files.length) {
-                this.addStagedFiles(Array.from(e.target.files));
-            }
-        });
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length) {
+                    this.addStagedFiles(Array.from(e.target.files));
+                }
+                e.target.value = '';
+            });
+        }
 
-        folderInput.addEventListener('change', (e) => {
-            if (e.target.files && e.target.files.length) {
-                this.addStagedFiles(Array.from(e.target.files));
-            }
-        });
+        if (folderInput) {
+            folderInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length) {
+                    this.addStagedFiles(Array.from(e.target.files));
+                }
+                e.target.value = '';
+            });
+        }
 
         // Staged actions
         document.getElementById('clear-staged-btn').addEventListener('click', () => {
@@ -806,6 +759,18 @@ class HyperDropApp {
                 this.openDiagnosticsModal();
             });
         }
+
+        const maxBtn = document.getElementById('preview-maximize-btn');
+        if (maxBtn) {
+            maxBtn.addEventListener('click', () => {
+                const modalCard = document.getElementById('preview-modal-card');
+                if (modalCard) {
+                    const isMax = modalCard.classList.toggle('maximized');
+                    maxBtn.innerHTML = isMax ? '<i class="fa-solid fa-compress"></i>' : '<i class="fa-solid fa-expand"></i>';
+                    maxBtn.title = isMax ? 'Restore Size' : 'Toggle Fullscreen';
+                }
+            });
+        }
         
         document.querySelectorAll('.modal-close-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -868,6 +833,13 @@ class HyperDropApp {
 
         if (id === 'preview-modal') {
             document.getElementById('preview-body').innerHTML = '';
+            const modalCard = document.getElementById('preview-modal-card');
+            const maxBtn = document.getElementById('preview-maximize-btn');
+            if (modalCard) modalCard.classList.remove('maximized');
+            if (maxBtn) {
+                maxBtn.innerHTML = '<i class="fa-solid fa-expand"></i>';
+                maxBtn.title = 'Toggle Fullscreen';
+            }
         }
 
         modal.classList.remove('active');
@@ -1321,6 +1293,9 @@ class HyperDropApp {
 
         // 1. Get Transport
         const transport = await this.connectionManager.getTransportForPeer(peer);
+        if (transport && typeof transport.connect === 'function') {
+            await transport.connect({ clientId: this.clientId, clientName: this.clientName || 'Laptop' });
+        }
 
         // Dynamic Adaptive Chunk Sizing for Large & Massive Files
         let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB default
@@ -1335,7 +1310,9 @@ class HyperDropApp {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
         const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(0);
 
-        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Adaptive Chunks to ${peer.name}`);
+        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Adaptive Chunks (${totalChunks} chunks) to ${peer.name}`);
+
+        const abortController = new AbortController();
 
         const workerData = {
             id: workerId,
@@ -1349,25 +1326,15 @@ class HyperDropApp {
             speedMBs: 0.0,
             speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: `Local Wi-Fi (${chunkSizeMB}MB Parallel)`,
-            startTime: Date.now()
+            transportMode: `Local Wi-Fi (${chunkSizeMB}MB Chunks)`,
+            startTime: Date.now(),
+            abortController: abortController
         };
 
         this.workers.set(workerId, workerData);
         this.renderTransferEngine();
 
         try {
-            // High-speed direct streaming upload for mobile Safari/Chrome
-            const formData = new FormData();
-            formData.append('file', file, fileName);
-            formData.append('senderName', this.clientName || 'Phone (Web Client)');
-            formData.append('targetPeerId', peer.id || 'host');
-
-            const uploadEndpoint = `${window.location.origin}/api/vault/direct-upload`;
-            const xhr = new XMLHttpRequest();
-            workerData.xhr = xhr;
-            xhr.open('POST', uploadEndpoint, true);
-
             // Notify recipient peer of incoming file transfer immediately
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 this.ws.send(JSON.stringify({
@@ -1388,88 +1355,92 @@ class HyperDropApp {
                 }));
             }
 
-            let lastDirectTime = Date.now();
-            let lastDirectBytes = 0;
+            let bytesTransferred = 0;
+            let lastTime = Date.now();
+            let lastBytes = 0;
 
-            xhr.upload.onprogress = (e) => {
+            // Check if resumable transfer
+            let startChunkIndex = 0;
+            if (typeof transport.checkResumeStatus === 'function') {
+                try {
+                    const resumeInfo = await transport.checkResumeStatus(workerId);
+                    if (resumeInfo && resumeInfo.startChunkIndex > 0) {
+                        startChunkIndex = resumeInfo.startChunkIndex;
+                        bytesTransferred = Math.min(file.size, startChunkIndex * CHUNK_SIZE);
+                        workerData.bytesTransferred = bytesTransferred;
+                        workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+                        console.log(`[TRANSFER] Resuming "${fileName}" from chunk ${startChunkIndex}/${totalChunks}`);
+                    }
+                } catch (_) {}
+            }
+
+            // Stream chunks sequentially with low memory overhead
+            for (let i = startChunkIndex; i < totalChunks; i++) {
                 if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                    try {
-                        xhr.upload.onprogress = null;
-                        xhr.abort();
-                    } catch (err) {}
+                    console.log(`[TRANSFER] Aborted "${fileName}" at chunk ${i}/${totalChunks}`);
                     return;
                 }
 
-                if (e.lengthComputable) {
-                    workerData.bytesTransferred = e.loaded;
-                    workerData.percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+                const startByte = i * CHUNK_SIZE;
+                const endByte = Math.min(file.size, startByte + CHUNK_SIZE);
+                const chunkBlob = file.slice(startByte, endByte);
 
-                    const now = Date.now();
-                    const deltaMs = now - lastDirectTime;
-                    if (deltaMs >= 150 || e.loaded >= e.total) {
-                        const deltaBytes = e.loaded - lastDirectBytes;
-                        const speedBps = (deltaBytes / (deltaMs / 1000));
-                        workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                        workerData.speedMbps = parseFloat(((deltaBytes * 8) / (deltaMs / 1000) / 1000000).toFixed(1));
-                        if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
-                        const rem = e.total - e.loaded;
-                        workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+                const chunkResult = await transport.sendChunk(chunkBlob, {
+                    fileId: workerId,
+                    fileName: fileName,
+                    fileSize: file.size,
+                    chunkIndex: i,
+                    totalChunks: totalChunks,
+                    startByte: startByte,
+                    senderId: this.clientId,
+                    senderName: this.clientName || 'Laptop',
+                    signal: abortController.signal
+                });
 
-                        lastDirectTime = now;
-                        lastDirectBytes = e.loaded;
-                        this.renderTransferEngine();
+                if (chunkResult && chunkResult.cancelled) {
+                    return;
+                }
 
-                        // Live progress update to recipient device
-                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            this.ws.send(JSON.stringify({
-                                type: 'transfer_stream_progress',
-                                data: {
-                                    fileId: workerId,
-                                    fileName: fileName,
-                                    fileSize: file.size,
-                                    bytesTransferred: e.loaded,
-                                    percent: workerData.percent,
-                                    speedMBs: workerData.speedMBs,
-                                    etaSeconds: workerData.etaSeconds,
-                                    senderId: this.clientId,
-                                    senderName: this.clientName || 'Laptop',
-                                    targetPeerId: peer.id || 'all',
-                                    status: 'receiving'
-                                }
-                            }));
-                        }
+                bytesTransferred += chunkBlob.size;
+                workerData.bytesTransferred = bytesTransferred;
+                workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+
+                const now = Date.now();
+                const deltaMs = now - lastTime;
+                if (deltaMs >= 150 || i === totalChunks - 1) {
+                    const deltaBytes = bytesTransferred - lastBytes;
+                    const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
+                    workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                    workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
+                    if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
+                    const rem = Math.max(0, file.size - bytesTransferred);
+                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+
+                    lastTime = now;
+                    lastBytes = bytesTransferred;
+                    this.renderTransferEngine();
+
+                    // Live progress update to recipient device
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({
+                            type: 'transfer_stream_progress',
+                            data: {
+                                fileId: workerId,
+                                fileName: fileName,
+                                fileSize: file.size,
+                                bytesTransferred: bytesTransferred,
+                                percent: workerData.percent,
+                                speedMBs: workerData.speedMBs,
+                                etaSeconds: workerData.etaSeconds,
+                                senderId: this.clientId,
+                                senderName: this.clientName || 'Laptop',
+                                targetPeerId: peer.id || 'all',
+                                status: 'receiving'
+                            }
+                        }));
                     }
                 }
-            };
-
-            await new Promise((resolve, reject) => {
-                xhr.onload = () => {
-                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                        return resolve();
-                    }
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve(xhr.response);
-                    } else {
-                        reject(new Error(`Server returned ${xhr.status}: ${xhr.statusText}`));
-                    }
-                };
-                xhr.onerror = () => {
-                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                        return resolve();
-                    }
-                    reject(new Error('Network error (check Wi-Fi connection)'));
-                };
-                xhr.ontimeout = () => {
-                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                        return resolve();
-                    }
-                    reject(new Error('Upload timed out'));
-                };
-                xhr.onabort = () => {
-                    resolve();
-                };
-                xhr.send(formData);
-            });
+            }
 
             if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
                 return;
@@ -1522,32 +1493,32 @@ class HyperDropApp {
         if (this.cancelledTransferIds.has(data.fileId)) {
             return; // Ignore if user cancelled
         }
-        // If this client is not the sender, track as incoming receiver queue item
+        if (data.status === 'cancelled' || data.isCancelled) {
+            this.cancelledTransferIds.add(data.fileId);
+            if (data.fileName) this.cancelledTransferIds.add(data.fileName);
+            this.workers.delete(data.fileId);
+            this.renderTransferEngine();
+            return;
+        }
+
         const existing = this.workers.get(data.fileId) || {
             id: data.fileId,
             fileName: data.fileName,
             fileSize: data.fileSize,
-            isIncoming: true,
-            senderName: data.senderName,
             status: 'receiving',
             bytesTransferred: 0,
             percent: 0,
             speedMBs: 0.0,
+            speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: data.connectionPath || 'Direct P2P (WebRTC)',
+            transportMode: 'Incoming Stream',
             startTime: Date.now()
         };
-
-        const deltaBytes = Math.max(0, data.bytesTransferred - (existing.bytesTransferred || 0));
-        this.totalBytesMoved += deltaBytes;
-
-        if (data.speedMBs > this.peakSpeedMBs) {
-            this.peakSpeedMBs = data.speedMBs;
-        }
 
         existing.bytesTransferred = data.bytesTransferred;
         existing.percent = data.percent;
         existing.speedMBs = data.speedMBs || 0.0;
+        existing.speedMbps = parseFloat(((data.speedMBs || 0) * 8).toFixed(1));
         existing.etaSeconds = data.etaSeconds || 0;
         existing.status = 'receiving';
         if (data.connectionPath) existing.transportMode = data.connectionPath;
@@ -1570,6 +1541,12 @@ class HyperDropApp {
                 if (w.id) this.cancelledTransferIds.add(w.id);
                 if (w.fileName) this.cancelledTransferIds.add(w.fileName);
                 if (w.fileId) this.cancelledTransferIds.add(w.fileId);
+
+                if (w.abortController) {
+                    try {
+                        w.abortController.abort();
+                    } catch (e) {}
+                }
 
                 if (w.xhr) {
                     try {
@@ -1801,7 +1778,8 @@ class HyperDropApp {
     // --- App Vault ---
     async fetchVaultItems() {
         try {
-            const res = await fetch('/api/vault/items');
+            const url = this.clientId ? `/api/vault/items?deviceId=${encodeURIComponent(this.clientId)}` : '/api/vault/items';
+            const res = await fetch(url);
             const data = await res.json();
             if (data.success) {
                 this.vaultItems = data.items;
@@ -1871,16 +1849,20 @@ class HyperDropApp {
 
         if (isPdf) {
             body.innerHTML = `
-                <div style="width:100%; border-radius:8px; overflow:hidden; border:1px solid #1a2c48; background:#040912;">
-                    <iframe src="/api/vault/preview/${item.id}#view=FitH" style="width:100%; height:480px; border:none; display:block;"></iframe>
+                <div style="width:100%; height:100%; min-height:420px; flex:1; border-radius:8px; overflow:hidden; border:1px solid #1a2c48; background:#040912; display:flex;">
+                    <iframe src="/api/vault/preview/${item.id}#view=FitH" style="width:100%; height:100%; flex:1; min-height:420px; border:none; display:block;"></iframe>
                 </div>
             `;
         } else if (item.category === 'image') {
-            body.innerHTML = `<img src="/api/vault/preview/${item.id}" style="max-width:100%; max-height:420px; border-radius:8px; margin:0 auto; display:block;">`;
+            body.innerHTML = `
+                <div style="width:100%; height:100%; flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                    <img src="/api/vault/preview/${item.id}" style="max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; border-radius:8px; display:block;">
+                </div>
+            `;
         } else if (item.category === 'video') {
             body.innerHTML = `
-                <div style="position:relative; width:100%; background:#000; border-radius:8px; overflow:hidden;">
-                    <video id="vault-video-player" controls playsinline preload="auto" style="width:100%; max-height:440px; display:block;" src="/api/vault/preview/${item.id}"></video>
+                <div style="position:relative; width:100%; height:100%; flex:1; min-height:260px; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                    <video id="vault-video-player" controls playsinline preload="auto" style="width:100%; height:100%; max-height:100%; object-fit:contain; display:block;" src="/api/vault/preview/${item.id}"></video>
                 </div>
             `;
 
@@ -1893,14 +1875,20 @@ class HyperDropApp {
             }, 100);
         } else if (item.category === 'audio') {
             body.innerHTML = `
-                <div style="padding:30px; text-align:center;">
-                    <i class="fa-solid fa-music" style="font-size:42px; color:var(--neon-cyan); margin-bottom:16px;"></i>
-                    <audio controls autoplay style="width:100%;" src="/api/vault/preview/${item.id}"></audio>
+                <div style="width:100%; max-width:540px; background:linear-gradient(145deg, #071120 0%, #030812 100%); border:1px solid rgba(0, 242, 254, 0.35); border-radius:16px; padding:24px 20px; box-shadow:0 8px 32px rgba(0,0,0,0.6); text-align:center; box-sizing:border-box; margin:auto;">
+                    <div style="width:68px; height:68px; margin:0 auto 14px; background:radial-gradient(circle, rgba(0, 242, 254, 0.25) 0%, rgba(5, 11, 20, 0.7) 100%); border:2px solid var(--neon-cyan); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 0 20px rgba(0, 242, 254, 0.35);">
+                        <i class="fa-solid fa-music" style="font-size:28px; color:var(--neon-cyan);"></i>
+                    </div>
+                    <h4 style="font-size:15px; font-weight:700; color:var(--text-main); margin:0 0 4px 0; word-break:break-all;">${item.originalName}</h4>
+                    <p style="font-size:12px; color:var(--text-dim); margin:0 0 18px 0;">Audio Track • ${this.formatBytes(item.size)}</p>
+                    <div style="width:100%; background:#040914; border-radius:30px; padding:6px 10px; border:1px solid rgba(0,242,254,0.2); box-sizing:border-box;">
+                        <audio controls autoplay style="width:100%; height:44px; display:block; outline:none;" src="/api/vault/preview/${item.id}"></audio>
+                    </div>
                 </div>
             `;
         } else {
             body.innerHTML = `
-                <div style="padding:24px; text-align:center; color:var(--text-dim);">
+                <div style="padding:24px; text-align:center; color:var(--text-dim); margin:auto;">
                     <i class="fa-solid fa-file-lines" style="font-size:48px; color:var(--neon-cyan); margin-bottom:12px;"></i>
                     <p style="font-size:15px; font-weight:700; color:var(--text-main);">${item.originalName}</p>
                     <p style="font-size:12px; margin-top:4px;">Size: ${this.formatBytes(item.size)} | SHA-256: ${item.hash ? item.hash.substring(0, 24) + '...' : 'Verified'}</p>
@@ -1908,15 +1896,43 @@ class HyperDropApp {
             `;
         }
 
+        const safeName = (item.originalName || 'file').replace(/'/g, "\\'");
         footer.innerHTML = `
-            <button class="pill-btn" style="background:var(--neon-cyan); color:#050b14; font-weight:700; width:100%; justify-content:center; padding:10px;" onclick="window.open('/api/vault/download/${item.id}', '_blank')"><i class="fa-solid fa-download"></i> Download & Save</button>
+            <div style="display:flex; gap:10px; width:100%;">
+                <button class="pill-btn" style="background:var(--neon-cyan); color:#050b14; font-weight:700; flex:1; justify-content:center; padding:11px; border:none; border-radius:8px; cursor:pointer;" onclick="app.downloadVaultItem('${item.id}', '${safeName}')">
+                    <i class="fa-solid fa-download"></i> Download & Save
+                </button>
+                <button class="pill-btn" style="background:rgba(0,242,254,0.15); color:var(--neon-cyan); font-weight:600; border:1px solid rgba(0,242,254,0.4); padding:11px 16px; border-radius:8px; cursor:pointer;" onclick="app.exportVaultItem('${item.id}')" title="Save directly to device storage">
+                    <i class="fa-solid fa-folder-arrow-down"></i> Save to Disk
+                </button>
+            </div>
         `;
 
         modal.classList.add('active');
     }
 
+    downloadVaultItem(id, filename) {
+        try {
+            const link = document.createElement('a');
+            link.href = `/api/vault/download/${id}`;
+            link.download = filename || 'download';
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => {
+                if (link.parentNode) {
+                    link.parentNode.removeChild(link);
+                }
+            }, 200);
+            this.showToast(`📥 Starting download for ${filename || 'file'}...`);
+        } catch (e) {
+            console.error('Download error:', e);
+            window.location.href = `/api/vault/download/${id}`;
+        }
+    }
+
     async exportVaultItem(id) {
         try {
+            this.showToast('Saving file to device storage...');
             const res = await fetch(`/api/vault/export/${id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1924,13 +1940,13 @@ class HyperDropApp {
             });
             const data = await res.json();
             if (data.success) {
-                alert(`File saved to device storage:\n${data.result.savedPath}`);
+                this.showToast(`✓ File saved to: ${data.result.savedPath}`);
                 this.fetchVaultItems();
             } else {
-                alert('Export failed: ' + data.error);
+                this.showToast(`Export failed: ${data.error}`);
             }
         } catch (e) {
-            alert('Export error: ' + e.message);
+            this.showToast(`Export error: ${e.message}`);
         }
     }
 

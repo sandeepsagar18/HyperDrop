@@ -17,6 +17,9 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 const server = http.createServer(app);
+server.timeout = 0; // Disable socket timeout for massive 10GB+ transfers
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 120000;
 const wss = new WebSocketServer({ server });
 
 // Start Live Network Monitor

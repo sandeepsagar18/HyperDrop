@@ -60,16 +60,27 @@ class LocalTransport extends TransferTransport {
     }
 
     async sendChunk(chunkBlob, chunkMeta) {
-        const { fileId, fileName, fileSize, chunkIndex, totalChunks, startByte, senderId, senderName } = chunkMeta;
+        const { fileId, fileName, fileSize, chunkIndex, totalChunks, startByte, senderId, senderName, signal } = chunkMeta;
 
-        const baseUrl = (this.peer && this.peer.url && this.peer.url.startsWith('http')) ? this.peer.url : '';
-        const uploadUrl = `${baseUrl}/api/vault/upload-chunk?fileId=${encodeURIComponent(fileId)}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id)}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
+        let baseUrl = '';
+        if (this.peer && this.peer.url && this.peer.url.startsWith('http')) {
+            baseUrl = this.peer.url;
+        } else if (this.peer && this.peer.ip && this.peer.port) {
+            baseUrl = `http://${this.peer.ip}:${this.peer.port}`;
+        } else if (typeof window !== 'undefined' && window.location && window.location.origin) {
+            baseUrl = window.location.origin;
+        }
+
+        const uploadUrl = `${baseUrl}/api/vault/upload-chunk?fileId=${encodeURIComponent(fileId)}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id || '')}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
 
         let chunkUploaded = false;
         let retryCount = 0;
         const maxRetries = 4;
 
         while (!chunkUploaded && retryCount < maxRetries) {
+            if (signal && signal.aborted) {
+                return { cancelled: true };
+            }
             try {
                 const res = await fetch(uploadUrl, {
                     method: 'POST',
@@ -83,11 +94,12 @@ class LocalTransport extends TransferTransport {
                         'X-File-Size': String(fileSize),
                         'X-Sender-Id': senderId,
                         'X-Sender-Name': encodeURIComponent(senderName),
-                        'X-Target-Peer-Id': this.peer.id,
+                        'X-Target-Peer-Id': this.peer.id || '',
                         'X-Target-Peer': encodeURIComponent(this.peer.name || 'Device'),
                         'X-Session-Token': this.sessionToken
                     },
-                    body: chunkBlob
+                    body: chunkBlob,
+                    signal
                 });
 
                 if (!res.ok) {
@@ -97,6 +109,9 @@ class LocalTransport extends TransferTransport {
                 chunkUploaded = true;
                 return { success: true };
             } catch (err) {
+                if (signal && signal.aborted) {
+                    return { cancelled: true };
+                }
                 retryCount++;
                 console.warn(`[TRANSFER] Chunk ${chunkIndex}/${totalChunks} retry ${retryCount}/${maxRetries}: ${err.message}`);
                 if (retryCount >= maxRetries) {
