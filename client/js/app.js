@@ -1268,11 +1268,24 @@ class HyperDropApp {
         this.stagedFiles = [];
         this.renderStagedFiles();
 
-        for (const file of filesToSend) {
-            for (const peer of targetPeers) {
-                this.streamFileToPeer(file, peer);
+        const concurrency = 2;
+        let queueIndex = 0;
+
+        const processQueue = async () => {
+            while (queueIndex < filesToSend.length) {
+                const currentFile = filesToSend[queueIndex++];
+                for (const peer of targetPeers) {
+                    await this.streamFileToPeer(currentFile, peer);
+                }
             }
+        };
+
+        const runnerCount = Math.min(concurrency, filesToSend.length);
+        const runners = [];
+        for (let i = 0; i < runnerCount; i++) {
+            runners.push(processQueue());
         }
+        await Promise.all(runners);
     }
 
     async streamFileToPeer(file, peer) {
