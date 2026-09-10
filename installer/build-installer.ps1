@@ -1,4 +1,4 @@
-﻿param()
+param()
 $ErrorActionPreference = 'Stop'
 
 $src = 'C:\Users\asus\AppData\Local\Programs\HyperDrop'
@@ -17,7 +17,7 @@ $outExe = 'C:\Users\asus\Desktop\HyperDrop-Setup.exe'
 $csSource = 'D:\My_Project\HyperDrop\installer\Installer.cs'
 
 Write-Host "Compiling setup installer with csc..."
-& $csc /target:winexe "/win32icon:$icon" "/resource:$zipPath,payload.zip" "/out:$outExe" "$csSource"
+& $csc /target:winexe "/reference:System.IO.Compression.dll,System.IO.Compression.FileSystem.dll,System.Windows.Forms.dll,System.Drawing.dll" "/win32icon:$icon" "/resource:$zipPath,payload.zip" "/out:$outExe" "$csSource"
 
 Copy-Item 'C:\Users\asus\Desktop\HyperDrop-Setup.exe' 'D:\My_Project\HyperDrop\HyperDrop-Setup.exe' -Force
 Write-Host "Setup installer successfully built and updated on Desktop!"

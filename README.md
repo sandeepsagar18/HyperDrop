@@ -119,6 +119,26 @@ flutter/build/windows/x64/runner/Release/hyperdrop_flutter.exe
 
 ---
 
+### 3. Android Mobile Application
+
+#### Option A: Direct APK Install
+The signed release APK can be installed directly onto any Android device:
+```bash
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+#### Option B: Build from Source
+```bash
+cd android
+./gradlew assembleDebug
+```
+The output APK will be generated at:
+```
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+---
+
 ## 🔒 Network & Firewall Setup
 
 If other devices on your Wi-Fi network cannot reach the laptop on port `3000`:
@@ -133,3 +153,4 @@ If other devices on your Wi-Fi network cannot reach the laptop on port `3000`:
 **Built with ❤️ by Sandeep**
 - **GitHub:** [@sandeepsagar18](https://github.com/sandeepsagar18)
 - **Repository:** [HyperDrop](https://github.com/sandeepsagar18/HyperDrop)
+
