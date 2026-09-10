@@ -5,7 +5,7 @@
 **Lightning-fast, peer-to-peer file sharing designed for cross-device transfer.**
 *Engineered for maximum local hardware bandwidth utilization without cloud dependencies.*
 
-[![GitHub Release](https://img.shields.io/badge/Release-v1.0.0-00f2fe.svg)](https://github.com/sandeepsagar18/HyperDrop)
+[![GitHub Release](https://img.shields.io/badge/Release-v2.0.0-00f2fe.svg)](https://github.com/sandeepsagar18/HyperDrop)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20macOS%20%7C%20Linux-00ff87.svg)](https://github.com/sandeepsagar18/HyperDrop)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -15,42 +15,44 @@
 
 ## ⚡ Core Transfer Modes
 
-### ⚡ Local Wi-Fi Transfer
-Transfer files directly between devices connected to the same Wi-Fi network without uploading files to a cloud storage server.
+### ⚡ Adaptive Binary Chunk Streaming (10GB+ Files)
+Supports massive 4K videos, large archives, and multi-gigabyte project directories using dynamic 2MB–16MB chunk streaming with zero RAM bloat and random-access disk ingestion.
 
-### 📱 Mobile Hotspot Mode
-No router available? Connect devices directly through a mobile hotspot with zero internet connection required.
+### 📱 Mobile Hotspot & Offline Mode
+No router available? Connect phones directly through a mobile hotspot with zero internet connection or cellular data required.
 
-### 🚀 High-Speed Multi-Worker Transfer Engine
-Utilizes available local network bandwidth for gigabit-speed transfers, including multi-gigabyte files and complete directory structures.
+### 🚀 Line-Rate Hardware Speeds (50–90+ MB/s)
+Pipelined socket streaming maximizes Wi-Fi 5/6 and mobile hotspot line-rate throughput for rapid file migration.
 
 ### 🔒 Direct & End-to-End Private
-Files stream directly between peer devices over local socket channels rather than routing through intermediary servers.
+Files stream directly between peer devices over local socket channels with SHA-256 integrity verification rather than routing through third-party servers.
 
 ---
 
 ## 🌟 Key Features
 
-- **📱 💻 100% Fluid Responsive Layout**:
-  - Seamlessly adapts across widescreen monitors, laptops, tablets, and mobile devices.
-  - Multi-column dashboard grid with an expanded **Data Vault & Storage** view.
-  - Cyberpunk dark theme with glowing neon accents and orbital radar interface.
+- **⚡ Adaptive Binary Chunk Streaming (10GB+ Files)**:
+  - Dynamic 2MB–16MB chunks with random-access disk writes (`fs.writeSync`) supporting 100GB+ transfers with low memory footprint.
+  - Resume interrupted transfers from exact chunk offsets.
+- **📁 Queue-Controlled Batch Folder Transfers**:
+  - Drag-and-drop entire directory trees with automatic concurrency control and root folder grouping.
+- **📥 Interactive Download Confirmation & File Explorer Opener**:
+  - Media badge icons (4K Video, Image, Audio, PDF) and automatic dual-saving to the system `Downloads` folder.
+  - 1-Click **"Open in Folder"** button highlights downloaded files directly in Windows File Explorer.
+- **📱 💻 Fluid Cyberpunk Responsive Layout**:
+  - Seamlessly adapts across widescreen monitors, laptops, tablets, and mobile devices with glowing orbital radar.
 - **🛰️ Automated Radar & Subnet Discovery**:
-  - Dual UDP broadcast + active ARP LAN subnet probing automatically detects nearby phones and laptops.
-  - Real-time orbital radar displays connected device nodes with interactive status badges.
+  - Dual UDP broadcast beacon (port 35432) + active ARP subnet probing automatically detects nearby phones and laptops.
 - **📷 Instant QR Code Pairing**:
-  - Scan the dynamic QR code on the dashboard directly from any mobile camera to pair and stream files instantly.
-- **⚡ Live Transfer Speedometer & Metric Controls**:
-  - Real-time speedometer gauge displaying transfer throughput in MB/s.
-  - 1-Click **Cancel** and **Restart** controls for active file transfers.
-  - Metrics tracking: **Peak Speed**, **Active Streaming Channels**, **Total Transferred**, and **ETA**.
+  - Scan the dynamic QR code directly from any mobile camera to pair and stream files instantly without app installation.
+- **⚡ Real-Time Speedometer & Metric Controls**:
+  - Live throughput gauge (MB/s & Mbps), peak speed tracker, ETA calculator, and 1-click **Cancel** / **Restart** controls.
 - **📦 Data Vault & In-App Media Viewer**:
-  - Built-in secure offline vault with SHA-256 integrity verification.
-  - Built-in instant preview players for Images, Videos, Audio, and PDFs.
+  - Built-in secure offline vault with SHA-256 hash checks and integrated players for 4K Videos, Images, Audio, and PDFs.
 - **📋 Instant Text & Clipboard Sync**:
-  - Send clipboard notes, links, and messages instantly across all connected devices.
-- **📦 Windows Setup Wizard (`HyperDrop-Setup.exe`)**:
-  - Native standalone 1-click Windows installer packaging the high-performance release binary and desktop shortcuts.
+  - Synchronize notes, code snippets, and URLs in real-time across all paired devices.
+- **📦 Standalone 1-Click Windows Setup (`HyperDrop-Setup.exe`)**:
+  - Native Windows installer with automatic process release guards and desktop shortcut creation.
 
 ---
 
