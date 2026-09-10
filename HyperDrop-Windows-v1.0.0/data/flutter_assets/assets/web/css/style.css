@@ -931,6 +931,31 @@ body {
     max-width: 680px;
 }
 
+.resizable-preview {
+    resize: both !important;
+    overflow: hidden !important;
+    min-width: 380px !important;
+    max-width: 96vw !important;
+    min-height: 280px !important;
+    max-height: 94vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative !important;
+    box-sizing: border-box !important;
+}
+
+.resizable-preview.maximized {
+    width: 96vw !important;
+    height: 92vh !important;
+    max-width: 96vw !important;
+    max-height: 92vh !important;
+    resize: none !important;
+}
+
+.resizable-preview.maximized .modal-resize-handle {
+    display: none !important;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;

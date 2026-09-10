@@ -392,29 +392,31 @@
 
     <!-- MODAL: Download Notification & Save Confirmation -->
     <div id="download-info-modal" class="modal">
-        <div class="modal-content glass-card" style="max-width: 480px; text-align: center;">
-            <div class="modal-header" style="justify-content: space-between;">
-                <h3 style="color: var(--neon-cyan);"><i class="fa-solid fa-circle-check" style="color: var(--neon-green); margin-right: 6px;"></i> File Downloaded</h3>
-                <button class="modal-close-btn">&times;</button>
+        <div class="modal-content glass-card" style="max-width: 460px; text-align: center; padding: 24px;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="color: var(--neon-cyan); margin: 0; font-size: 16px; font-weight: 700;">
+                    <i class="fa-solid fa-circle-check" style="color: var(--neon-green); margin-right: 6px; font-size: 17px;"></i> File Downloaded
+                </h3>
+                <button class="modal-close-btn" onclick="document.getElementById('download-info-modal').classList.remove('active')">&times;</button>
             </div>
-            <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; align-items: center; gap: 14px;">
-                <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(0, 242, 254, 0.15); border: 2px solid var(--neon-cyan); display: flex; align-items: center; justify-content: center;">
-                    <i id="download-modal-icon" class="fa-solid fa-file" style="font-size: 24px; color: var(--neon-cyan);"></i>
+            <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: radial-gradient(circle, rgba(0, 242, 254, 0.2) 0%, rgba(5, 11, 20, 0.8) 100%); border: 2px solid var(--neon-cyan); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 16px rgba(0, 242, 254, 0.25);">
+                    <i id="download-modal-icon" class="fa-solid fa-file" style="font-size: 28px; width: 28px; height: 28px; display: inline-block;"></i>
                 </div>
                 <div style="width: 100%;">
                     <div id="download-modal-filename" style="font-weight: 700; color: #fff; font-size: 15px; word-break: break-all; margin-bottom: 4px;">File Name</div>
                     <div id="download-modal-status" style="font-size: 12px; color: var(--neon-green); font-weight: 600;">✓ Saved to Downloads Folder</div>
                 </div>
-                <div style="width: 100%; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; text-align: left; box-sizing: border-box;">
-                    <div style="font-size: 10.5px; color: var(--text-dim); margin-bottom: 3px; font-weight: 600; text-transform: uppercase;">Saved Path:</div>
-                    <div id="download-modal-path" style="font-size: 12px; color: var(--text-main); font-family: monospace; word-break: break-all;">C:\Users\...</div>
+                <div style="width: 100%; background: rgba(0,0,0,0.5); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 8px; padding: 10px 12px; text-align: left; box-sizing: border-box;">
+                    <div style="font-size: 10px; color: var(--neon-cyan); margin-bottom: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Saved Path:</div>
+                    <div id="download-modal-path" style="font-size: 12px; color: #fff; font-family: monospace; word-break: break-all; line-height: 1.4;">C:\Users\...</div>
                 </div>
             </div>
-            <div class="modal-footer" style="display: flex; gap: 10px; width: 100%; justify-content: flex-end;">
-                <button id="download-modal-open-folder-btn" class="pill-btn" style="background: var(--neon-cyan); color: #050b14; font-weight: 700; flex: 1; justify-content: center; padding: 10px; border-radius: 8px; border: none; cursor: pointer;">
+            <div class="modal-footer" style="display: flex; gap: 12px; width: 100%; margin-top: 20px; box-sizing: border-box;">
+                <button id="download-modal-open-folder-btn" class="pill-btn" style="background: var(--neon-cyan); color: #050b14; font-weight: 700; flex: 1; justify-content: center; padding: 11px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                     <i class="fa-solid fa-folder-open"></i> Open in Folder
                 </button>
-                <button class="pill-btn modal-close-btn" style="background: rgba(255,255,255,0.1); color: #fff; padding: 10px 18px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer;">
+                <button class="pill-btn" onclick="document.getElementById('download-info-modal').classList.remove('active')" style="background: rgba(255,255,255,0.08); color: #fff; padding: 11px 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-size: 13px; font-weight: 600;">
                     Done
                 </button>
             </div>
