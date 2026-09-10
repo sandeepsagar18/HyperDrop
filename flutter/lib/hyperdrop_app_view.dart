@@ -56,6 +56,7 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
     final candidateServerPaths = [
       '$appDir\\server\\index.js',
       '$appDir\\..\\server\\index.js',
+      r'D:\My_Project\HyperDrop\server\index.js',
       r'D:\HyperDrop\server\index.js',
     ];
 
@@ -78,7 +79,8 @@ class _HyperDropAppViewState extends State<HyperDropAppView> {
 
     if (foundServer != null) {
       try {
-        final serverDir = File(foundServer).parent.parent.path;
+        final serverFile = File(foundServer);
+        final serverDir = serverFile.parent.parent.path; // Application root directory containing server/ and client/
         
         // Prefer direct detached process execution for bundled node
         if (foundNode != 'node' && File(foundNode).existsSync()) {

@@ -26,3 +26,7 @@ flutter/.flutter-plugins
 flutter/.flutter-plugins-dependencies
 flutter/windows/nuget.exe
 *.exe
+installer/payload.zip
+android/app/build/
+android/.gradle/
+android/build/

@@ -27,7 +27,7 @@ class LocalTransport extends TransferTransport {
                 return `http://${window.app.systemStatus.primaryIp}:${port}`;
             }
         }
-        return '';
+        return 'http://127.0.0.1:3000';
     }
 
     async connect(clientInfo = {}) {

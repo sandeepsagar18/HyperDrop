@@ -304,19 +304,31 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
         res.json({ success: true });
     });
 
+    function safeDecode(val, fallback = '') {
+        if (!val) return fallback;
+        try {
+            return decodeURIComponent(val);
+        } catch (_) {
+            return String(val);
+        }
+    }
+
     // 5. App Vault Ingest (Receiving Chunks via Worker stream)
-    router.post('/vault/upload-chunk', express.raw({ type: '*/*', limit: '200mb' }), async (req, res) => {
+    router.post('/vault/upload-chunk', express.raw({ type: '*/*', limit: '500mb' }), async (req, res) => {
         try {
             const fileId = req.headers['x-file-id'] || req.query.fileId;
-            const fileName = decodeURIComponent(req.headers['x-file-name'] || req.query.fileName || 'file');
+            const rawFileName = req.headers['x-file-name'] || req.query.fileName || 'file';
+            const fileName = safeDecode(rawFileName, rawFileName);
             const fileSize = Number(req.headers['x-file-size'] || req.query.fileSize);
             const chunkIndex = Number(req.headers['x-chunk-index'] || req.query.chunkIndex);
             const totalChunks = Number(req.headers['x-total-chunks'] || req.query.totalChunks);
             const startByte = Number(req.headers['x-chunk-start'] || req.query.startByte || (chunkIndex * (req.body ? req.body.length : 0)));
             const senderId = req.headers['x-sender-id'] || req.query.senderId || null;
-            const senderName = decodeURIComponent(req.headers['x-sender-name'] || req.query.senderName || 'Sender');
+            const rawSenderName = req.headers['x-sender-name'] || req.query.senderName || 'Sender';
+            const senderName = safeDecode(rawSenderName, rawSenderName);
             const targetPeerId = req.headers['x-target-peer-id'] || req.query.targetPeerId || null;
-            const targetPeerName = decodeURIComponent(req.headers['x-target-peer'] || req.query.targetPeerName || 'All Devices');
+            const rawTargetPeerName = req.headers['x-target-peer'] || req.query.targetPeerName || 'All Devices';
+            const targetPeerName = safeDecode(rawTargetPeerName, rawTargetPeerName);
 
             if (!fileId || isNaN(chunkIndex) || isNaN(totalChunks)) {
                 return res.status(400).json({ success: false, error: 'Missing chunk metadata headers' });
