@@ -19,7 +19,7 @@ class LocalTransport extends TransferTransport {
             if (window.app && window.app.serverBaseUrl && window.app.serverBaseUrl.startsWith('http')) {
                 return window.app.serverBaseUrl.replace(/\/+$/, '');
             }
-            if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
+            if (window.location && window.location.origin && window.location.origin.startsWith('http') && !window.location.origin.startsWith('file:')) {
                 return window.location.origin.replace(/\/+$/, '');
             }
             if (window.app && window.app.systemStatus && window.app.systemStatus.primaryIp) {
@@ -27,13 +27,13 @@ class LocalTransport extends TransferTransport {
                 return `http://${window.app.systemStatus.primaryIp}:${port}`;
             }
         }
-        return 'http://192.168.29.137:3000';
+        return '';
     }
 
     async connect(clientInfo = {}) {
         this.status = 'connecting';
         const baseUrl = this._resolveBaseUrl();
-        console.log(`[CONNECTION] Mode: LOCAL | Connecting to ${this.peer.name} (${baseUrl})`);
+        console.log(`[CONNECTION] Mode: LOCAL | Connecting to ${this.peer.name} (${baseUrl || 'local'})`);
 
         try {
             const hsRes = await fetch(`${baseUrl}/api/handshake`, {
@@ -98,17 +98,10 @@ class LocalTransport extends TransferTransport {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/octet-stream',
-                        'X-File-Id': fileId,
+                        'X-File-Id': String(fileId),
                         'X-Chunk-Index': String(chunkIndex),
                         'X-Total-Chunks': String(totalChunks),
-                        'X-Chunk-Start': String(startByte),
-                        'X-File-Name': encodeURIComponent(fileName),
-                        'X-File-Size': String(fileSize),
-                        'X-Sender-Id': senderId,
-                        'X-Sender-Name': encodeURIComponent(senderName),
-                        'X-Target-Peer-Id': this.peer.id || '',
-                        'X-Target-Peer': encodeURIComponent(this.peer.name || 'Device'),
-                        'X-Session-Token': this.sessionToken
+                        'X-Chunk-Start': String(startByte)
                     },
                     body: chunkBlob,
                     signal
