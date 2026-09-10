@@ -572,6 +572,25 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
         });
     });
 
+    router.post('/system/open-folder', (req, res) => {
+        try {
+            const { targetPath } = req.body;
+            const defaultDirs = getSystemDirectories();
+            const folder = targetPath || defaultDirs.downloads;
+            const { exec } = require('child_process');
+            if (process.platform === 'win32') {
+                if (fs.existsSync(folder) && fs.statSync(folder).isFile()) {
+                    exec(`explorer.exe /select,"${folder}"`);
+                } else {
+                    exec(`explorer.exe "${folder}"`);
+                }
+            }
+            res.json({ success: true, folder });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
     // 8. Instant Text & Link Sync
     router.post('/sync/clipboard', (req, res) => {
         const { text, senderId, senderName, targetPeerIds, targetPeerNames } = req.body;

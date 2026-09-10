@@ -1828,6 +1828,7 @@ class HyperDropApp {
             const row = document.createElement('div');
             row.className = 'vault-row-card';
 
+            const safeName = (item.originalName || 'file').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const timeStr = new Date(item.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
             row.innerHTML = `
@@ -1838,7 +1839,7 @@ class HyperDropApp {
                 </div>
                 <div class="vault-btn-group">
                     <button class="btn-micro" onclick="window.app.previewVaultItem('${item.id}')"><i class="fa-solid fa-eye"></i> View</button>
-                    <button class="btn-micro" style="color:var(--neon-cyan);" onclick="window.open('/api/vault/download/${item.id}', '_blank')"><i class="fa-solid fa-download"></i> Download</button>
+                    <button class="btn-micro" style="color:var(--neon-cyan);" onclick="window.app.downloadVaultItem('${item.id}', '${safeName}')"><i class="fa-solid fa-download"></i> Download</button>
                     <button class="btn-micro" style="color:var(--neon-red);" onclick="window.app.deleteVaultItem('${item.id}')"><i class="fa-solid fa-trash"></i></button>
                 </div>
             `;
@@ -1924,23 +1925,85 @@ class HyperDropApp {
         modal.classList.add('active');
     }
 
-    downloadVaultItem(id, filename) {
+    async downloadVaultItem(id, filename) {
+        const item = this.vaultItems.find(i => i.id === id);
+        const name = filename || (item ? item.originalName : 'file');
+        this.showToast(`📥 Downloading "${name}"...`);
+
+        // 1. Direct browser download trigger
         try {
             const link = document.createElement('a');
             link.href = `/api/vault/download/${id}`;
-            link.download = filename || 'download';
+            link.download = name;
             document.body.appendChild(link);
             link.click();
             setTimeout(() => {
                 if (link.parentNode) {
                     link.parentNode.removeChild(link);
                 }
-            }, 200);
-            this.showToast(`📥 Starting download for ${filename || 'file'}...`);
+            }, 300);
         } catch (e) {
             console.error('Download error:', e);
-            window.location.href = `/api/vault/download/${id}`;
         }
+
+        // 2. Direct storage export (saves automatically to Downloads folder)
+        try {
+            const res = await fetch(`/api/vault/export/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await res.json();
+            if (data.success && data.result) {
+                this.showToast(`✓ "${name}" downloaded!`);
+                this.showDownloadInfoModal(name, data.result.savedPath, item ? item.category : 'file');
+                this.fetchVaultItems();
+            } else {
+                this.showDownloadInfoModal(name, 'Saved to Downloads', item ? item.category : 'file');
+            }
+        } catch (e) {
+            this.showDownloadInfoModal(name, 'Saved to Downloads', item ? item.category : 'file');
+        }
+    }
+
+    showDownloadInfoModal(filename, savedPath, category = 'file') {
+        const modal = document.getElementById('download-info-modal');
+        if (!modal) return;
+
+        const iconEl = document.getElementById('download-modal-icon');
+        const nameEl = document.getElementById('download-modal-filename');
+        const pathEl = document.getElementById('download-modal-path');
+        const openBtn = document.getElementById('download-modal-open-folder-btn');
+
+        if (nameEl) nameEl.textContent = filename;
+        if (pathEl) pathEl.textContent = savedPath;
+
+        if (iconEl) {
+            if (category === 'video' || filename.match(/\.(mp4|mkv|avi|mov|webm)$/i)) {
+                iconEl.className = 'fa-solid fa-video';
+            } else if (category === 'image' || filename.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i)) {
+                iconEl.className = 'fa-solid fa-image';
+            } else if (category === 'audio' || filename.match(/\.(mp3|wav|m4a|aac|flac)$/i)) {
+                iconEl.className = 'fa-solid fa-music';
+            } else if (filename.match(/\.pdf$/i)) {
+                iconEl.className = 'fa-solid fa-file-pdf';
+            } else {
+                iconEl.className = 'fa-solid fa-file';
+            }
+        }
+
+        if (openBtn) {
+            openBtn.onclick = () => {
+                fetch('/api/system/open-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetPath: savedPath })
+                }).catch(() => {});
+                this.showToast('📁 Opening in File Explorer...');
+            };
+        }
+
+        this.openModal('download-info-modal');
     }
 
     async exportVaultItem(id) {
@@ -1954,6 +2017,7 @@ class HyperDropApp {
             const data = await res.json();
             if (data.success) {
                 this.showToast(`✓ File saved to: ${data.result.savedPath}`);
+                this.showDownloadInfoModal(data.result.savedName || 'File', data.result.savedPath);
                 this.fetchVaultItems();
             } else {
                 this.showToast(`Export failed: ${data.error}`);
