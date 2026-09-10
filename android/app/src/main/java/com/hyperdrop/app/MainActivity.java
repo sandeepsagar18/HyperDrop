@@ -99,22 +99,30 @@ public class MainActivity extends AppCompatActivity {
                 "192.168.43.1"    // Android Hotspot Gateway
             };
 
-            for (String ip : candidateIps) {
-                if (isServerReachable("http://" + ip + ":3000/api/status")) {
-                    final String activeServer = "http://" + ip + ":3000";
-                    runOnUiThread(() -> {
-                        webView.evaluateJavascript(
-                            "if (window.app) { " +
-                            "  window.app.serverBaseUrl = '" + activeServer + "'; " +
-                            "  if (window.app.ws && window.app.ws.readyState !== 1) { window.app.initWebSocket(); } " +
-                            "  window.app.fetchPeers(); " +
-                            "  window.app.fetchVaultItems(); " +
-                            "}",
-                            null
-                        );
-                    });
-                    break;
+            for (int attempt = 0; attempt < 30; attempt++) {
+                boolean found = false;
+                for (String ip : candidateIps) {
+                    if (isServerReachable("http://" + ip + ":3000/api/status")) {
+                        final String activeServer = "http://" + ip + ":3000";
+                        runOnUiThread(() -> {
+                            webView.evaluateJavascript(
+                                "if (window.app) { " +
+                                "  window.app.serverBaseUrl = '" + activeServer + "'; " +
+                                "  window.app.initWebSocket(); " +
+                                "  window.app.fetchPeers(); " +
+                                "  window.app.fetchVaultItems(); " +
+                                "}",
+                                null
+                            );
+                        });
+                        found = true;
+                        break;
+                    }
                 }
+                if (found && attempt > 3) break;
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ignored) {}
             }
         }).start();
     }
