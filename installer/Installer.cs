@@ -232,6 +232,30 @@ namespace HyperDropInstaller
 
             try
             {
+                statusLabel.Text = "Closing existing instances...";
+                progressBar.Value = 5;
+                await Task.Delay(50);
+
+                // Terminate any running HyperDrop processes to release file locks
+                string[] processNames = new string[] { "hyperdrop_flutter", "HyperDrop", "node" };
+                foreach (var name in processNames)
+                {
+                    foreach (var proc in Process.GetProcessesByName(name))
+                    {
+                        try
+                        {
+                            string procPath = "";
+                            try { procPath = proc.MainModule.FileName; } catch { }
+                            if (string.IsNullOrEmpty(procPath) || procPath.IndexOf("HyperDrop", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                proc.Kill();
+                                proc.WaitForExit(1000);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
                 statusLabel.Text = "Preparing installation...";
                 progressBar.Value = 10;
                 await Task.Delay(50);
