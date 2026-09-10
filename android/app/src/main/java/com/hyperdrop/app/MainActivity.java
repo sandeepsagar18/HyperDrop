@@ -84,8 +84,43 @@ public class MainActivity extends AppCompatActivity {
 
         requestNecessaryPermissions();
 
-        // Load local assets or default server
-        webView.loadUrl("file:///android_asset/web/index.html");
+        // Automatically discover and load the laptop's HyperDrop server
+        loadBestEndpoint();
+    }
+
+    private void loadBestEndpoint() {
+        new Thread(() -> {
+            String[] candidateIps = {
+                "192.168.29.137", // Primary laptop Wi-Fi IP
+                "192.168.137.1",  // Windows Mobile Hotspot Gateway
+                "192.168.43.1"    // Android Hotspot Gateway
+            };
+
+            String foundUrl = null;
+            for (String ip : candidateIps) {
+                if (isServerReachable("http://" + ip + ":3000/api/status")) {
+                    foundUrl = "http://" + ip + ":3000";
+                    break;
+                }
+            }
+
+            final String targetUrl = (foundUrl != null) ? foundUrl : "http://192.168.29.137:3000";
+            runOnUiThread(() -> webView.loadUrl(targetUrl));
+        }).start();
+    }
+
+    private boolean isServerReachable(String targetUrl) {
+        try {
+            java.net.URL url = new java.net.URL(targetUrl);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(1500);
+            conn.setReadTimeout(1500);
+            conn.setRequestMethod("GET");
+            int code = conn.getResponseCode();
+            return (code >= 200 && code < 400);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void requestNecessaryPermissions() {

@@ -12,12 +12,32 @@ class LocalTransport extends TransferTransport {
         this.chunkSize = options.chunkSize || (4 * 1024 * 1024); // 4MB
     }
 
+    _resolveBaseUrl() {
+        if (this.peer && this.peer.url && this.peer.url.startsWith('http')) {
+            return this.peer.url.replace(/\/+$/, '');
+        }
+        if (this.peer && this.peer.ip && this.peer.port) {
+            return `http://${this.peer.ip}:${this.peer.port}`;
+        }
+        if (typeof window !== 'undefined') {
+            if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
+                return window.location.origin.replace(/\/+$/, '');
+            }
+            if (window.app && window.app.systemStatus && window.app.systemStatus.primaryIp) {
+                const port = window.app.systemStatus.httpPort || 3000;
+                return `http://${window.app.systemStatus.primaryIp}:${port}`;
+            }
+        }
+        return 'http://192.168.29.137:3000';
+    }
+
     async connect(clientInfo = {}) {
         this.status = 'connecting';
-        console.log(`[CONNECTION] Mode: LOCAL | Connecting to ${this.peer.name} (${this.peer.url})`);
+        const baseUrl = this._resolveBaseUrl();
+        console.log(`[CONNECTION] Mode: LOCAL | Connecting to ${this.peer.name} (${baseUrl})`);
 
         try {
-            const hsRes = await fetch(`${this.peer.url || ''}/api/handshake`, {
+            const hsRes = await fetch(`${baseUrl}/api/handshake`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -47,7 +67,8 @@ class LocalTransport extends TransferTransport {
 
     async checkResumeStatus(fileId) {
         try {
-            const statusRes = await fetch(`${this.peer.url || ''}/api/vault/upload-status/${fileId}`);
+            const baseUrl = this._resolveBaseUrl();
+            const statusRes = await fetch(`${baseUrl}/api/vault/upload-status/${fileId}`);
             const data = await statusRes.json();
             if (data && data.status && data.status.nextChunkIndex > 0) {
                 return {
@@ -61,15 +82,7 @@ class LocalTransport extends TransferTransport {
 
     async sendChunk(chunkBlob, chunkMeta) {
         const { fileId, fileName, fileSize, chunkIndex, totalChunks, startByte, senderId, senderName, signal } = chunkMeta;
-
-        let baseUrl = '';
-        if (this.peer && this.peer.url && this.peer.url.startsWith('http')) {
-            baseUrl = this.peer.url;
-        } else if (this.peer && this.peer.ip && this.peer.port) {
-            baseUrl = `http://${this.peer.ip}:${this.peer.port}`;
-        } else if (typeof window !== 'undefined' && window.location && window.location.origin) {
-            baseUrl = window.location.origin;
-        }
+        const baseUrl = this._resolveBaseUrl();
 
         const uploadUrl = `${baseUrl}/api/vault/upload-chunk?fileId=${encodeURIComponent(fileId)}&fileName=${encodeURIComponent(fileName)}&fileSize=${fileSize}&chunkIndex=${chunkIndex}&totalChunks=${totalChunks}&startByte=${startByte}&senderId=${encodeURIComponent(senderId)}&senderName=${encodeURIComponent(senderName)}&targetPeerId=${encodeURIComponent(this.peer.id || '')}&targetPeerName=${encodeURIComponent(this.peer.name || 'Device')}`;
 
