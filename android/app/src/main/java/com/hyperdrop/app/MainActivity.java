@@ -84,11 +84,14 @@ public class MainActivity extends AppCompatActivity {
 
         requestNecessaryPermissions();
 
-        // Automatically discover and load the laptop's HyperDrop server
-        loadBestEndpoint();
+        // Primary: Load fast local assets embedded directly inside APK (zero black screen or network stall)
+        webView.loadUrl("file:///android_asset/web/index.html");
+
+        // Background: Connect to laptop endpoints if reachable
+        checkAndSyncEndpoints();
     }
 
-    private void loadBestEndpoint() {
+    private void checkAndSyncEndpoints() {
         new Thread(() -> {
             String[] candidateIps = {
                 "192.168.29.137", // Primary laptop Wi-Fi IP
@@ -96,16 +99,18 @@ public class MainActivity extends AppCompatActivity {
                 "192.168.43.1"    // Android Hotspot Gateway
             };
 
-            String foundUrl = null;
             for (String ip : candidateIps) {
                 if (isServerReachable("http://" + ip + ":3000/api/status")) {
-                    foundUrl = "http://" + ip + ":3000";
+                    final String activeServer = "http://" + ip + ":3000";
+                    runOnUiThread(() -> {
+                        webView.evaluateJavascript(
+                            "if (window.app) { window.app.serverBaseUrl = '" + activeServer + "'; }",
+                            null
+                        );
+                    });
                     break;
                 }
             }
-
-            final String targetUrl = (foundUrl != null) ? foundUrl : "http://192.168.29.137:3000";
-            runOnUiThread(() -> webView.loadUrl(targetUrl));
         }).start();
     }
 

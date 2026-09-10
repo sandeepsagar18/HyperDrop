@@ -27,9 +27,24 @@ class HyperDropApp {
         // Hybrid Connection Manager (Local LAN + Remote WebRTC)
         this.connectionManager = new ConnectionManager(this);
         this.currentRemoteSession = null;
-        this.pendingTransferAuth = null;
+        this.serverBaseUrl = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) 
+            ? window.location.origin.replace(/\/+$/, '') 
+            : 'http://192.168.29.137:3000';
 
         this.init();
+    }
+
+    getApiUrl(endpoint) {
+        const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+        if (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) {
+            return cleanEndpoint;
+        }
+        return `${this.serverBaseUrl}${cleanEndpoint}`;
+    }
+
+    async apiFetch(endpoint, options = {}) {
+        const url = this.getApiUrl(endpoint);
+        return await fetch(url, options);
     }
 
     async init() {
@@ -51,7 +66,7 @@ class HyperDropApp {
 
     async fetchStatus() {
         try {
-            const res = await fetch('/api/status');
+            const res = await this.apiFetch('/api/status');
             const data = await res.json();
             if (data.success) {
                 this.systemStatus = data;
@@ -68,46 +83,61 @@ class HyperDropApp {
                 if (hostIcon) hostIcon.className = this.clientType === 'phone' ? 'fa-solid fa-mobile-screen-button' : 'fa-solid fa-laptop';
             }
         } catch (e) {
-            console.error('Failed to fetch status:', e);
+            console.warn('Failed to fetch status (running offline):', e.message);
         }
     }
 
     initWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
+        let wsUrl = '';
+        if (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin.startsWith('http')) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsUrl = `${protocol}//${window.location.host}`;
+        } else {
+            const cleanHost = this.serverBaseUrl.replace(/^https?:\/\//, '');
+            wsUrl = `ws://${cleanHost}`;
+        }
         
-        this.ws = new WebSocket(wsUrl);
+        try {
+            this.ws = new WebSocket(wsUrl);
 
-        this.ws.onopen = () => {
-            this.registerDeviceOnRadar();
-            
-            // Check if opened via QR code pairing scan
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('token') || urlParams.has('qr') || window.location.search.includes('connect')) {
-                this.showToast('⚡ Paired via QR Code! Ready to transfer.');
-            }
-
-            // Immediately register again after 500ms to guarantee broadcast
-            setTimeout(() => this.registerDeviceOnRadar(), 500);
-
-            // Frequent heartbeat to keep peer alive on all connected radars
-            setInterval(() => {
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify({ type: 'heartbeat', id: this.clientId }));
+            this.ws.onopen = () => {
+                this.registerDeviceOnRadar();
+                
+                // Check if opened via QR code pairing scan
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('token') || urlParams.has('qr') || window.location.search.includes('connect')) {
+                    this.showToast('⚡ Paired via QR Code! Ready to transfer.');
                 }
-            }, 2000);
-        };
 
-        this.ws.onmessage = (event) => {
-            try {
-                const msg = JSON.parse(event.data);
-                this.handleWsMessage(msg);
-            } catch (err) {}
-        };
+                // Immediately register again after 500ms to guarantee broadcast
+                setTimeout(() => this.registerDeviceOnRadar(), 500);
 
-        this.ws.onclose = () => {
-            setTimeout(() => this.initWebSocket(), 1500);
-        };
+                // Frequent heartbeat to keep peer alive on all connected radars
+                setInterval(() => {
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ type: 'heartbeat', id: this.clientId }));
+                    }
+                }, 2000);
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    this.handleWsMessage(msg);
+                } catch (err) {}
+            };
+
+            this.ws.onclose = () => {
+                setTimeout(() => this.initWebSocket(), 1500);
+            };
+
+            this.ws.onerror = () => {
+                // Suppress unhandled socket exceptions on offline Android
+            };
+        } catch (err) {
+            console.warn('[WS] Failed to connect WebSocket (retrying):', err.message);
+            setTimeout(() => this.initWebSocket(), 2000);
+        }
     }
 
     registerDeviceOnRadar() {
@@ -119,7 +149,7 @@ class HyperDropApp {
                 deviceType: this.clientType,
                 osType: navigator.platform || 'Device',
                 avatar: this.clientType === 'phone' ? '📱' : '💻',
-                url: window.location.origin
+                url: this.serverBaseUrl
             }));
         }
     }
@@ -961,7 +991,7 @@ class HyperDropApp {
     // --- Top Radar Orbit Rendering ---
     async fetchPeers() {
         try {
-            const res = await fetch('/api/peers');
+            const res = await this.apiFetch('/api/peers');
             const data = await res.json();
             if (data.success) {
                 const activeIds = new Set();
@@ -1053,7 +1083,7 @@ class HyperDropApp {
 
     async fetchClipboardHistory() {
         try {
-            const res = await fetch('/api/sync/clipboard/history');
+            const res = await this.apiFetch('/api/sync/clipboard/history');
             const data = await res.json();
             if (data.success && data.history) {
                 const container = document.getElementById('clip-history-container');
@@ -1792,7 +1822,7 @@ class HyperDropApp {
     async fetchVaultItems() {
         try {
             const url = this.clientId ? `/api/vault/items?deviceId=${encodeURIComponent(this.clientId)}` : '/api/vault/items';
-            const res = await fetch(url);
+            const res = await this.apiFetch(url);
             const data = await res.json();
             if (data.success) {
                 this.vaultItems = data.items;
@@ -1803,7 +1833,7 @@ class HyperDropApp {
 
     async fetchVaultStats() {
         try {
-            const res = await fetch('/api/vault/stats');
+            const res = await this.apiFetch('/api/vault/stats');
             const data = await res.json();
             if (data.success) {
                 document.getElementById('vault-items-badge').textContent = `${data.stats.totalFiles} item(s) in Vault`;
@@ -2036,7 +2066,7 @@ class HyperDropApp {
     async loadQrCode(selectedIp = null) {
         try {
             const url = selectedIp ? `/api/qr?ip=${encodeURIComponent(selectedIp)}` : '/api/qr';
-            const res = await fetch(url);
+            const res = await this.apiFetch(url);
             const data = await res.json();
             if (data.success) {
                 const qrImg = document.getElementById('qr-image');
