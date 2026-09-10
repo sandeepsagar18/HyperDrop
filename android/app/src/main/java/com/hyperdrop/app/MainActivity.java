@@ -104,7 +104,12 @@ public class MainActivity extends AppCompatActivity {
                     final String activeServer = "http://" + ip + ":3000";
                     runOnUiThread(() -> {
                         webView.evaluateJavascript(
-                            "if (window.app) { window.app.serverBaseUrl = '" + activeServer + "'; }",
+                            "if (window.app) { " +
+                            "  window.app.serverBaseUrl = '" + activeServer + "'; " +
+                            "  if (window.app.ws && window.app.ws.readyState !== 1) { window.app.initWebSocket(); } " +
+                            "  window.app.fetchPeers(); " +
+                            "  window.app.fetchVaultItems(); " +
+                            "}",
                             null
                         );
                     });

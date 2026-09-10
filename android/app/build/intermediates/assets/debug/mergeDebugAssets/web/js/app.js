@@ -1962,9 +1962,11 @@ class HyperDropApp {
 
         // 1. Direct browser download trigger
         try {
+            const downloadUrl = this.getApiUrl(`/api/vault/download/${id}`);
             const link = document.createElement('a');
-            link.href = `/api/vault/download/${id}`;
+            link.href = downloadUrl;
             link.download = name;
+            link.target = '_blank';
             document.body.appendChild(link);
             link.click();
             setTimeout(() => {
@@ -1978,7 +1980,7 @@ class HyperDropApp {
 
         // 2. Direct storage export (saves automatically to Downloads folder)
         try {
-            const res = await fetch(`/api/vault/export/${id}`, {
+            const res = await this.apiFetch(`/api/vault/export/${id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})

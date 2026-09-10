@@ -13,13 +13,12 @@ class LocalTransport extends TransferTransport {
     }
 
     _resolveBaseUrl() {
-        if (this.peer && this.peer.url && this.peer.url.startsWith('http')) {
-            return this.peer.url.replace(/\/+$/, '');
-        }
-        if (this.peer && this.peer.ip && this.peer.port) {
-            return `http://${this.peer.ip}:${this.peer.port}`;
-        }
+        // In HyperDrop architecture, chunk streaming routes through the central host server vault.
+        // If window.app.serverBaseUrl is configured (e.g. from APK or browser), use it.
         if (typeof window !== 'undefined') {
+            if (window.app && window.app.serverBaseUrl && window.app.serverBaseUrl.startsWith('http')) {
+                return window.app.serverBaseUrl.replace(/\/+$/, '');
+            }
             if (window.location && window.location.origin && window.location.origin.startsWith('http')) {
                 return window.location.origin.replace(/\/+$/, '');
             }
