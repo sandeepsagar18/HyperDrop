@@ -370,12 +370,7 @@ class HyperDropApp {
         const fileInput = document.getElementById('file-input');
         const folderInput = document.getElementById('folder-input');
 
-        // Dropzone click fallback (if user clicks dropzone background)
-        dropzone.addEventListener('click', (e) => {
-            if (e.target.closest('#choose-folder-btn') || e.target.closest('#choose-files-btn') || e.target.tagName === 'LABEL' || e.target.tagName === 'INPUT') return;
-            if (fileInput) fileInput.click();
-        });
-
+        // Drag & Drop event handling
         dropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropzone.classList.add('dragover');
