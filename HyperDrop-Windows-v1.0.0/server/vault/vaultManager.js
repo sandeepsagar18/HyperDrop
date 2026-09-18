@@ -252,8 +252,12 @@ class VaultManager extends EventEmitter {
         let list = [...this.files];
         
         // Scope to current device: show files intended for this device, broadcast to all, or sent by this device
+        // and exclude files deleted specifically by this device
         if (peerId) {
             list = list.filter(item => {
+                if (item.deletedBy && Array.isArray(item.deletedBy) && item.deletedBy.includes(peerId)) {
+                    return false;
+                }
                 if (!item.targetPeerId || item.targetPeerId === 'all') return true;
                 return item.targetPeerId === peerId || item.senderId === peerId;
             });
@@ -273,11 +277,19 @@ class VaultManager extends EventEmitter {
         return this.files.find(item => item.id === id);
     }
 
-    getVaultStats() {
-        const totalFiles = this.files.length;
-        const totalBytes = this.files.reduce((acc, f) => acc + (f.size || 0), 0);
+    getVaultStats(peerId = null) {
+        let items = this.files;
+        if (peerId) {
+            items = items.filter(f => {
+                if (f.deletedBy && Array.isArray(f.deletedBy) && f.deletedBy.includes(peerId)) return false;
+                if (!f.targetPeerId || f.targetPeerId === 'all') return true;
+                return f.targetPeerId === peerId || f.senderId === peerId;
+            });
+        }
+        const totalFiles = items.length;
+        const totalBytes = items.reduce((acc, f) => acc + (f.size || 0), 0);
         const categoriesCount = {};
-        for (const f of this.files) {
+        for (const f of items) {
             categoriesCount[f.category] = (categoriesCount[f.category] || 0) + 1;
         }
         return {
@@ -287,19 +299,34 @@ class VaultManager extends EventEmitter {
         };
     }
 
-    deleteVaultItem(id) {
+    deleteVaultItem(id, requestingDeviceId = null) {
         const index = this.files.findIndex(item => item.id === id);
-        if (index !== -1) {
-            const item = this.files[index];
-            if (fs.existsSync(item.path)) {
-                try { fs.unlinkSync(item.path); } catch (e) {}
-            }
-            this.files.splice(index, 1);
-            this._saveIndex();
-            this.emit('file_deleted', id);
-            return true;
+        if (index === -1) return false;
+
+        const item = this.files[index];
+        const targetDeviceId = requestingDeviceId || 'host_device';
+
+        if (!item.deletedBy) item.deletedBy = [];
+        if (!item.deletedBy.includes(targetDeviceId)) {
+            item.deletedBy.push(targetDeviceId);
         }
-        return false;
+
+        this._saveIndex();
+        this.emit('file_deleted', { id, deviceId: targetDeviceId });
+        return true;
+    }
+
+    clearVault(requestingDeviceId = null) {
+        const targetDeviceId = requestingDeviceId || 'host_device';
+        for (const item of this.files) {
+            if (!item.deletedBy) item.deletedBy = [];
+            if (!item.deletedBy.includes(targetDeviceId)) {
+                item.deletedBy.push(targetDeviceId);
+            }
+        }
+        this._saveIndex();
+        this.emit('vault_cleared', { deviceId: targetDeviceId });
+        return true;
     }
 
     addClipboardItem(item) {
@@ -319,7 +346,31 @@ class VaultManager extends EventEmitter {
         this.clipboardHistory = [];
     }
 
-    clearVault() {
+    clearVault(requestingDeviceId = null) {
+        if (requestingDeviceId) {
+            for (const item of this.files) {
+                if (!item.deletedBy) item.deletedBy = [];
+                if (!item.deletedBy.includes(requestingDeviceId)) {
+                    item.deletedBy.push(requestingDeviceId);
+                }
+            }
+            // Remove items where all involved devices deleted it
+            this.files = this.files.filter(item => {
+                const involvesSender = !item.senderId || item.deletedBy.includes(item.senderId);
+                const involvesTarget = !item.targetPeerId || item.targetPeerId === 'all' || item.deletedBy.includes(item.targetPeerId);
+                if (involvesSender && involvesTarget) {
+                    if (fs.existsSync(item.path)) {
+                        try { fs.unlinkSync(item.path); } catch (e) {}
+                    }
+                    return false;
+                }
+                return true;
+            });
+            this._saveIndex();
+            this.emit('vault_cleared', { deviceId: requestingDeviceId });
+            return;
+        }
+
         for (const item of this.files) {
             if (fs.existsSync(item.path)) {
                 try { fs.unlinkSync(item.path); } catch (e) {}
@@ -327,7 +378,7 @@ class VaultManager extends EventEmitter {
         }
         this.files = [];
         this._saveIndex();
-        this.emit('vault_cleared');
+        this.emit('vault_cleared', {});
     }
 }
 

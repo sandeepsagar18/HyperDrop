@@ -471,7 +471,8 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
     });
 
     router.get('/vault/stats', (req, res) => {
-        res.json({ success: true, stats: vaultManager.getVaultStats() });
+        const { deviceId, peerId } = req.query;
+        res.json({ success: true, stats: vaultManager.getVaultStats(deviceId || peerId) });
     });
 
     router.get('/vault/preview/:id', (req, res) => {
@@ -535,12 +536,14 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
         }
     });
 
-    router.get('/vault/download/:id', (req, res) => {
+    router.get(['/vault/download/:id', '/vault/download/:id/:filename'], (req, res) => {
         const item = vaultManager.getVaultItemById(req.params.id);
         if (!item || !fs.existsSync(item.path)) {
             return res.status(404).send('File not found in Vault');
         }
-        res.download(item.path, item.originalName);
+        const downloadName = item.originalName || req.params.filename || req.query.filename || 'file';
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+        res.download(item.path, downloadName);
     });
 
     router.post('/vault/export/:id', (req, res) => {
@@ -567,12 +570,14 @@ function createApiRouter({ discoveryEngine, workerPool, appState, broadcastWs })
     });
 
     router.delete('/vault/item/:id', (req, res) => {
-        const success = vaultManager.deleteVaultItem(req.params.id);
+        const requestingDeviceId = req.query.deviceId || req.body.deviceId;
+        const success = vaultManager.deleteVaultItem(req.params.id, requestingDeviceId);
         res.json({ success });
     });
 
     router.delete('/vault/clear', (req, res) => {
-        vaultManager.clearVault();
+        const requestingDeviceId = req.query.deviceId || req.body.deviceId;
+        vaultManager.clearVault(requestingDeviceId);
         res.json({ success: true });
     });
 

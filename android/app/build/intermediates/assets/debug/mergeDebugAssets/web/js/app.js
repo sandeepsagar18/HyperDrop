@@ -360,6 +360,15 @@ class HyperDropApp {
                 this.fetchVaultItems();
                 this.fetchVaultStats();
                 this.showToast(`📥 Received: ${data.originalName || data.fileName || 'New File'}`);
+
+                // Auto-Download for recipient device (Phone or Laptop)
+                const isRecipient = (data.targetPeerId === this.clientId) || (!data.targetPeerId && data.senderId !== this.clientId);
+                if (isRecipient && data.id) {
+                    const saveName = data.originalName || data.fileName || 'file';
+                    setTimeout(() => {
+                        this.downloadVaultItem(data.id, saveName);
+                    }, 300);
+                }
                 break;
         }
     }
@@ -605,10 +614,10 @@ class HyperDropApp {
             queueList.addEventListener('click', handleQueueAction);
         }
 
-        // Clear vault
+        // Clear vault (Device scoped)
         document.getElementById('clear-vault-btn').addEventListener('click', async () => {
-            if (confirm('Clear all files in offline vault?')) {
-                await fetch('/api/vault/clear', { method: 'DELETE' });
+            if (confirm('Clear files in your offline vault?')) {
+                await this.apiFetch(`/api/vault/clear?deviceId=${encodeURIComponent(this.clientId)}`, { method: 'DELETE' });
                 this.fetchVaultItems();
                 this.fetchVaultStats();
             }
@@ -991,22 +1000,27 @@ class HyperDropApp {
     // --- Top Radar Orbit Rendering ---
     async fetchPeers() {
         try {
-            const res = await this.apiFetch('/api/peers');
+            const url = this.clientId ? `/api/peers?deviceId=${encodeURIComponent(this.clientId)}` : '/api/peers';
+            const res = await this.apiFetch(url);
             const data = await res.json();
             if (data.success) {
                 const activeIds = new Set();
+                const now = Date.now();
                 for (const p of data.peers) {
                     if (p.id !== this.clientId) {
+                        p.lastSeen = now;
                         this.addOrUpdatePeer(p);
                         activeIds.add(p.id);
                     }
                 }
 
-                // Remove peers that have disconnected
-                for (const id of Array.from(this.peers.keys())) {
+                // Remove peers that have truly disconnected (4s grace period to prevent flickering)
+                for (const [id, peer] of this.peers.entries()) {
                     if (!activeIds.has(id)) {
-                        this.peers.delete(id);
-                        this.selectedPeerIds.delete(id);
+                        if (!peer.lastSeen || (now - peer.lastSeen > 4000)) {
+                            this.peers.delete(id);
+                            this.selectedPeerIds.delete(id);
+                        }
                     }
                 }
 
@@ -1833,7 +1847,8 @@ class HyperDropApp {
 
     async fetchVaultStats() {
         try {
-            const res = await this.apiFetch('/api/vault/stats');
+            const url = this.clientId ? `/api/vault/stats?deviceId=${encodeURIComponent(this.clientId)}` : '/api/vault/stats';
+            const res = await this.apiFetch(url);
             const data = await res.json();
             if (data.success) {
                 document.getElementById('vault-items-badge').textContent = `${data.stats.totalFiles} item(s) in Vault`;
@@ -1962,7 +1977,7 @@ class HyperDropApp {
 
         // 1. Direct browser download trigger
         try {
-            const downloadUrl = this.getApiUrl(`/api/vault/download/${id}`);
+            const downloadUrl = this.getApiUrl(`/api/vault/download/${encodeURIComponent(id)}/${encodeURIComponent(name)}`);
             const link = document.createElement('a');
             link.href = downloadUrl;
             link.download = name;
@@ -1973,7 +1988,7 @@ class HyperDropApp {
                 if (link.parentNode) {
                     link.parentNode.removeChild(link);
                 }
-            }, 300);
+            }, 500);
         } catch (e) {
             console.error('Download error:', e);
         }
@@ -2060,7 +2075,7 @@ class HyperDropApp {
     }
 
     async deleteVaultItem(id) {
-        await fetch(`/api/vault/item/${id}`, { method: 'DELETE' });
+        await this.apiFetch(`/api/vault/item/${id}?deviceId=${encodeURIComponent(this.clientId)}`, { method: 'DELETE' });
         this.fetchVaultItems();
         this.fetchVaultStats();
     }

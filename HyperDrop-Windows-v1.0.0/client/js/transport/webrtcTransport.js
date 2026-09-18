@@ -511,7 +511,7 @@ class WebRTCTransport extends TransferTransport {
             const transfer = this.incomingTransfers.get(numericId);
             if (!transfer) return;
 
-            const chunkData = new Uint8Array(data, 16, payloadLen);
+            const chunkData = new Uint8Array(data.slice(16, 16 + payloadLen));
             transfer.chunks[chunkIndex] = chunkData;
             transfer.chunksReceived++;
             transfer.bytesReceived += payloadLen;
@@ -562,17 +562,25 @@ class WebRTCTransport extends TransferTransport {
     }
 
     _saveReceivedFile(transfer, blob) {
-        // Direct browser download for mobile phone / laptop (ZERO CLOUD RELAY)
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = transfer.fileName;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(downloadUrl);
-        }, 10000);
+        if (window.AndroidBridge && typeof window.AndroidBridge.saveBase64File === 'function') {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result.split(',')[1];
+                window.AndroidBridge.saveBase64File(base64, transfer.fileName);
+            };
+            reader.readAsDataURL(blob);
+        } else {
+            const downloadUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = transfer.fileName;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(downloadUrl);
+            }, 10000);
+        }
 
         if (window.app) {
             window.app.showToast(`📥 Received & Downloaded ${transfer.fileName}!`);
