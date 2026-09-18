@@ -56,6 +56,7 @@ public class MainActivity extends AppCompatActivity {
     private final AtomicBoolean isScanning = new AtomicBoolean(false);
     private final ExecutorService scanPool = Executors.newFixedThreadPool(25);
     private WifiManager.LocalOnlyHotspotReservation hotspotReservation = null;
+    private LocalHyperDropServer localServer = null;
 
     public class AndroidBridge {
         @JavascriptInterface
@@ -299,6 +300,14 @@ public class MainActivity extends AppCompatActivity {
 
         requestNecessaryPermissions();
 
+        // Start autonomous local embedded server for standalone Phone-to-Phone transfers
+        try {
+            localServer = new LocalHyperDropServer(this, 3000);
+            localServer.start();
+        } catch (Exception e) {
+            android.util.Log.e("MainActivity", "Embedded server init error: " + e.getMessage());
+        }
+
         // Load fast local web assets embedded directly in APK
         webView.loadUrl("file:///android_asset/web/index.html");
 
@@ -384,6 +393,11 @@ public class MainActivity extends AppCompatActivity {
                             }
                         });
                     }
+                }
+
+                // 5. Ultimate Fallback: Local Autonomous Embedded Server
+                if (currentActiveServer == null && isServerReachable("http://127.0.0.1:3000/api/status")) {
+                    applyActiveServer("http://127.0.0.1:3000");
                 }
             } catch (Exception ignored) {
             } finally {
@@ -517,6 +531,15 @@ public class MainActivity extends AppCompatActivity {
             webView.goBack();
         } else {
             super.onBackPressed();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (localServer != null) {
+            localServer.stop();
+            localServer = null;
         }
     }
 }
