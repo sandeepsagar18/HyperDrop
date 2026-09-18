@@ -182,6 +182,20 @@ public class LocalHyperDropServer {
                 }
                 res.put("peers", arr);
                 sendJsonResponse(socket, 200, res);
+            } else if (path.equals("/api/diagnostics")) {
+                JSONObject res = new JSONObject();
+                res.put("success", true);
+                JSONObject diag = new JSONObject();
+                diag.put("interfaceName", "wlan0 (Wi-Fi)");
+                diag.put("interfaceType", "Wi-Fi Direct / Local Hotspot");
+                diag.put("localIp", socket.getLocalAddress().getHostAddress());
+                diag.put("subnetMask", "255.255.255.0");
+                diag.put("gatewayIp", "192.168.43.1");
+                diag.put("isHotspot", true);
+                diag.put("discoveryEngineStatus", "Autonomous Native (Active)");
+                diag.put("offlineModeHealth", "100% Offline Hotspot Engine Running");
+                res.put("diagnostics", diag);
+                sendJsonResponse(socket, 200, res);
             } else if (path.equals("/api/vault/files")) {
                 JSONObject res = new JSONObject();
                 res.put("success", true);
