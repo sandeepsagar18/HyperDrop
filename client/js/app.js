@@ -359,16 +359,7 @@ class HyperDropApp {
                 }
                 this.fetchVaultItems();
                 this.fetchVaultStats();
-                this.showToast(`📥 Received: ${data.originalName || data.fileName || 'New File'}`);
-
-                // Auto-Download for recipient device (Phone or Laptop)
-                const isRecipient = (data.targetPeerId === this.clientId) || (!data.targetPeerId && data.senderId !== this.clientId);
-                if (isRecipient && data.id) {
-                    const saveName = data.originalName || data.fileName || 'file';
-                    setTimeout(() => {
-                        this.downloadVaultItem(data.id, saveName);
-                    }, 300);
-                }
+                this.showToast(`📥 Received: ${data.originalName || data.fileName || 'New File'} in Vault`);
                 break;
         }
     }
@@ -1906,22 +1897,24 @@ class HyperDropApp {
 
         title.innerHTML = `<i class="fa-solid ${isPdf ? 'fa-file-pdf' : 'fa-file'}" style="color:${isPdf ? 'var(--neon-red)' : 'var(--neon-cyan)'}; margin-right:6px;"></i> ${item.originalName}`;
 
+        const previewUrl = this.getApiUrl(`/api/vault/preview/${encodeURIComponent(item.id)}`);
+
         if (isPdf) {
             body.innerHTML = `
                 <div style="width:100%; height:100%; min-height:420px; flex:1; border-radius:8px; overflow:hidden; border:1px solid #1a2c48; background:#040912; display:flex;">
-                    <iframe src="/api/vault/preview/${item.id}#view=FitH" style="width:100%; height:100%; flex:1; min-height:420px; border:none; display:block;"></iframe>
+                    <iframe src="${previewUrl}#view=FitH" style="width:100%; height:100%; flex:1; min-height:420px; border:none; display:block;"></iframe>
                 </div>
             `;
         } else if (item.category === 'image') {
             body.innerHTML = `
                 <div style="width:100%; height:100%; flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                    <img src="/api/vault/preview/${item.id}" style="max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; border-radius:8px; display:block;">
+                    <img src="${previewUrl}" style="max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; border-radius:8px; display:block;">
                 </div>
             `;
         } else if (item.category === 'video') {
             body.innerHTML = `
                 <div style="position:relative; width:100%; height:100%; flex:1; min-height:260px; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
-                    <video id="vault-video-player" controls playsinline preload="auto" style="width:100%; height:100%; max-height:100%; object-fit:contain; display:block;" src="/api/vault/preview/${item.id}"></video>
+                    <video id="vault-video-player" controls playsinline preload="auto" style="width:100%; height:100%; max-height:100%; object-fit:contain; display:block;" src="${previewUrl}"></video>
                 </div>
             `;
 
@@ -1941,7 +1934,7 @@ class HyperDropApp {
                     <h4 style="font-size:15px; font-weight:700; color:var(--text-main); margin:0 0 4px 0; word-break:break-all;">${item.originalName}</h4>
                     <p style="font-size:12px; color:var(--text-dim); margin:0 0 18px 0;">Audio Track • ${this.formatBytes(item.size)}</p>
                     <div style="width:100%; background:#040914; border-radius:30px; padding:6px 10px; border:1px solid rgba(0,242,254,0.2); box-sizing:border-box;">
-                        <audio controls autoplay style="width:100%; height:44px; display:block; outline:none;" src="/api/vault/preview/${item.id}"></audio>
+                        <audio controls autoplay style="width:100%; height:44px; display:block; outline:none;" src="${previewUrl}"></audio>
                     </div>
                 </div>
             `;
