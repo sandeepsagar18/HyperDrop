@@ -271,9 +271,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (currentActiveServer != null) {
-                    injectServerUrl(currentActiveServer);
-                }
+                applyActiveServer("http://127.0.0.1:3000");
+                startDynamicSubnetScan();
             }
         });
 

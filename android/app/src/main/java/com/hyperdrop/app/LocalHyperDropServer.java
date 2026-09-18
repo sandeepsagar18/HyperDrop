@@ -1,6 +1,9 @@
 package com.hyperdrop.app;
 
 import android.content.Context;
+import android.net.DhcpInfo;
+import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.Environment;
 import android.util.Base64;
 import android.util.Log;
@@ -18,21 +21,30 @@ import java.util.concurrent.*;
 /**
  * Embedded High-Performance Autonomous Server for Android HyperDrop.
  * Enables standalone Phone-to-Phone discovery and multi-gigabyte file transfers
- * even when completely disconnected from PC / Internet (e.g. on Mobile Hotspot).
+ * without requiring any PC or router (e.g. over Mobile Hotspot, Wi-Fi Direct, Local LAN).
  */
 public class LocalHyperDropServer {
     private static final String TAG = "HyperDropServer";
+    private static final int DISCOVERY_PORT = 35432;
+
     private final int port;
     private final Context context;
     private ServerSocket serverSocket;
-    private boolean isRunning = false;
+    private DatagramSocket udpSocket;
+    private WifiManager.MulticastLock multicastLock;
+    private volatile boolean isRunning = false;
+
     private final ExecutorService threadPool = Executors.newCachedThreadPool();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
 
     private final Map<String, JSONObject> connectedPeers = new ConcurrentHashMap<>();
     private final Set<WebSocketClient> wsClients = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Map<String, FileUploadSession> activeUploads = new ConcurrentHashMap<>();
     private final List<JSONObject> vaultFiles = new CopyOnWriteArrayList<>();
     private File vaultDir;
+
+    private final String localDeviceId;
+    private final String localDeviceName;
 
     private static class FileUploadSession {
         String fileId;
@@ -48,16 +60,22 @@ public class LocalHyperDropServer {
     }
 
     public LocalHyperDropServer(Context context, int port) {
-        this.context = context;
+        this.context = context.getApplicationContext();
         this.port = port;
+        this.localDeviceId = "android_" + Build.MODEL.replaceAll("[^a-zA-Z0-9]", "") + "_" + (System.currentTimeMillis() % 10000);
+        this.localDeviceName = Build.MODEL != null ? Build.MODEL : "Android Phone";
         initVaultDir();
     }
 
     private void initVaultDir() {
-        File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        vaultDir = new File(downloads, "HyperDrop");
-        if (!vaultDir.exists()) {
-            vaultDir.mkdirs();
+        try {
+            File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            vaultDir = new File(downloads, "HyperDrop");
+            if (!vaultDir.exists()) {
+                vaultDir.mkdirs();
+            }
+        } catch (Exception e) {
+            vaultDir = context.getExternalFilesDir(null);
         }
     }
 
@@ -65,20 +83,29 @@ public class LocalHyperDropServer {
         if (isRunning) return;
         isRunning = true;
 
+        acquireMulticastLock();
+
+        // 1. Start HTTP + WebSocket Server on Port 3000
         threadPool.execute(() -> {
             try {
                 serverSocket = new ServerSocket(port);
-                Log.i(TAG, "HyperDrop Native Server started on port " + port);
+                Log.i(TAG, "HyperDrop Autonomous Server listening on port " + port);
                 while (isRunning && !serverSocket.isClosed()) {
                     Socket socket = serverSocket.accept();
                     threadPool.execute(() -> handleConnection(socket));
                 }
             } catch (Exception e) {
                 if (isRunning) {
-                    Log.e(TAG, "Server error: " + e.getMessage());
+                    Log.e(TAG, "Server socket error: " + e.getMessage());
                 }
             }
         });
+
+        // 2. Start UDP Discovery Beacon Broadcast & Listener
+        startUdpDiscovery();
+
+        // 3. Start Periodic Active Subnet & Gateway Prober
+        startActiveSubnetProber();
     }
 
     public synchronized void stop() {
@@ -87,10 +114,226 @@ public class LocalHyperDropServer {
             if (serverSocket != null && !serverSocket.isClosed()) {
                 serverSocket.close();
             }
+            if (udpSocket != null && !udpSocket.isClosed()) {
+                udpSocket.close();
+            }
             for (WebSocketClient client : wsClients) {
                 client.close();
             }
             wsClients.clear();
+            releaseMulticastLock();
+            scheduler.shutdownNow();
+            threadPool.shutdownNow();
+        } catch (Exception ignored) {}
+    }
+
+    private void acquireMulticastLock() {
+        try {
+            WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                multicastLock = wifi.createMulticastLock("HyperDropMulticastLock");
+                multicastLock.setReferenceCounted(true);
+                multicastLock.acquire();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Could not acquire MulticastLock: " + e.getMessage());
+        }
+    }
+
+    private void releaseMulticastLock() {
+        try {
+            if (multicastLock != null && multicastLock.isHeld()) {
+                multicastLock.release();
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void startUdpDiscovery() {
+        // UDP Listener
+        threadPool.execute(() -> {
+            try {
+                udpSocket = new DatagramSocket(null);
+                udpSocket.setReuseAddress(true);
+                udpSocket.setBroadcast(true);
+                udpSocket.bind(new InetSocketAddress(DISCOVERY_PORT));
+
+                byte[] buf = new byte[2048];
+                while (isRunning && !udpSocket.isClosed()) {
+                    DatagramPacket packet = new DatagramPacket(buf, buf.length);
+                    udpSocket.receive(packet);
+
+                    String senderIp = packet.getAddress().getHostAddress();
+                    if (isSelfIp(senderIp)) continue;
+
+                    String message = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8);
+                    handleDiscoveryBeacon(message, senderIp);
+                }
+            } catch (Exception e) {
+                if (isRunning) {
+                    Log.w(TAG, "UDP listener stopped: " + e.getMessage());
+                }
+            }
+        });
+
+        // UDP Beacon Broadcaster (every 2.0s)
+        scheduler.scheduleWithFixedDelay(() -> {
+            if (!isRunning) return;
+            try {
+                JSONObject beacon = new JSONObject();
+                beacon.put("type", "hyperdrop_beacon");
+                beacon.put("id", localDeviceId);
+                beacon.put("name", localDeviceName);
+                beacon.put("port", port);
+                beacon.put("platform", "Android");
+                beacon.put("deviceType", "phone");
+
+                byte[] data = beacon.toString().getBytes(StandardCharsets.UTF_8);
+
+                DatagramSocket sendSocket = new DatagramSocket();
+                sendSocket.setBroadcast(true);
+
+                // Broadcast to global subnet
+                DatagramPacket p1 = new DatagramPacket(data, data.length, InetAddress.getByName("255.255.255.255"), DISCOVERY_PORT);
+                sendSocket.send(p1);
+
+                // If Hotspot Gateway, broadcast directly to hotspot client subnet
+                String gateway = getGatewayIp();
+                if (gateway != null && !gateway.equals("0.0.0.0")) {
+                    try {
+                        sendSocket.send(new DatagramPacket(data, data.length, InetAddress.getByName(gateway), DISCOVERY_PORT));
+                    } catch (Exception ignored) {}
+                }
+
+                sendSocket.close();
+            } catch (Exception ignored) {}
+        }, 1, 2, TimeUnit.SECONDS);
+    }
+
+    private void handleDiscoveryBeacon(String beaconText, String senderIp) {
+        try {
+            JSONObject beacon = new JSONObject(beaconText);
+            if (!"hyperdrop_beacon".equals(beacon.optString("type"))) return;
+
+            String peerId = beacon.optString("id");
+            if (peerId.isEmpty() || peerId.equals(localDeviceId)) return;
+
+            String peerName = beacon.optString("name", "HyperDrop Device");
+            int peerPort = beacon.optInt("port", 3000);
+
+            registerDiscoveredPeer(peerId, peerName, senderIp, peerPort, beacon.optString("deviceType", "phone"));
+        } catch (Exception ignored) {}
+    }
+
+    private void startActiveSubnetProber() {
+        scheduler.scheduleWithFixedDelay(() -> {
+            if (!isRunning) return;
+            try {
+                // 1. Probe Gateway (Crucial when connected to phone hotspot at 192.168.43.1)
+                String gateway = getGatewayIp();
+                if (gateway != null && !isSelfIp(gateway)) {
+                    probeTargetIp(gateway);
+                }
+
+                // 2. Probe default hotspot subnet (192.168.43.1..30)
+                String localIp = getLocalIpAddress();
+                if (localIp != null && localIp.contains(".")) {
+                    String prefix = localIp.substring(0, localIp.lastIndexOf('.') + 1);
+                    int selfLastOctet = 0;
+                    try {
+                        selfLastOctet = Integer.parseInt(localIp.substring(localIp.lastIndexOf('.') + 1));
+                    } catch (Exception ignored) {}
+
+                    // Fast probe nearby addresses first (1 to 30)
+                    for (int i = 1; i <= 30; i++) {
+                        if (i == selfLastOctet) continue;
+                        final String targetIp = prefix + i;
+                        threadPool.execute(() -> probeTargetIp(targetIp));
+                    }
+                }
+
+                // 3. Also probe standard hotspot host address 192.168.43.1
+                probeTargetIp("192.168.43.1");
+            } catch (Exception ignored) {}
+        }, 2, 4, TimeUnit.SECONDS);
+    }
+
+    private void probeTargetIp(String targetIp) {
+        if (isSelfIp(targetIp)) return;
+        try {
+            URL url = new URL("http://" + targetIp + ":" + port + "/api/status");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(1200);
+            conn.setReadTimeout(1200);
+            conn.setRequestMethod("GET");
+            int code = conn.getResponseCode();
+            if (code == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONObject res = new JSONObject(sb.toString());
+                String deviceName = res.optString("deviceName", "HyperDrop Device");
+                String peerId = "ip_" + targetIp.replace(".", "_");
+
+                registerDiscoveredPeer(peerId, deviceName, targetIp, port, "phone");
+
+                // Proactively notify that peer about our existence
+                sendPeerAnnouncement(targetIp, port);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void sendPeerAnnouncement(String remoteIp, int remotePort) {
+        try {
+            URL url = new URL("http://" + remoteIp + ":" + remotePort + "/api/peers/register");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(1500);
+            conn.setReadTimeout(1500);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setDoOutput(true);
+
+            JSONObject body = new JSONObject();
+            body.put("id", localDeviceId);
+            body.put("name", localDeviceName);
+            body.put("ip", getLocalIpAddress());
+            body.put("port", port);
+            body.put("deviceType", "phone");
+
+            OutputStream os = conn.getOutputStream();
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            os.close();
+            conn.getResponseCode();
+        } catch (Exception ignored) {}
+    }
+
+    private void registerDiscoveredPeer(String id, String name, String ip, int peerPort, String deviceType) {
+        try {
+            boolean isNew = !connectedPeers.containsKey(id);
+            JSONObject peerData = new JSONObject();
+            peerData.put("id", id);
+            peerData.put("name", name);
+            peerData.put("deviceType", deviceType != null ? deviceType : "phone");
+            peerData.put("osType", "Android");
+            peerData.put("avatar", "\uD83D\uDCF1");
+            peerData.put("url", "http://" + ip + ":" + peerPort);
+            peerData.put("ip", ip);
+            peerData.put("lastSeen", System.currentTimeMillis());
+
+            connectedPeers.put(id, peerData);
+
+            if (isNew) {
+                Log.i(TAG, "\u26A1 Peer discovered: " + name + " (" + ip + ")");
+            }
+
+            // Notify local WebSockets
+            JSONObject discMsg = new JSONObject();
+            discMsg.put("type", "peer_discovered");
+            discMsg.put("data", peerData);
+            broadcastWebSocket(discMsg.toString());
         } catch (Exception ignored) {}
     }
 
@@ -164,12 +407,15 @@ public class LocalHyperDropServer {
                 return;
             }
 
-            // 3. API Routes
+            // 3. API Endpoints
             if (path.equals("/api/status")) {
                 JSONObject status = new JSONObject();
                 status.put("success", true);
-                status.put("deviceName", android.os.Build.MODEL);
+                status.put("deviceId", localDeviceId);
+                status.put("deviceName", localDeviceName);
                 status.put("platform", "Android");
+                status.put("primaryIp", getLocalIpAddress());
+                status.put("httpPort", port);
                 status.put("version", "2.0.0");
                 status.put("serverTime", System.currentTimeMillis());
                 sendJsonResponse(socket, 200, status);
@@ -182,15 +428,38 @@ public class LocalHyperDropServer {
                 }
                 res.put("peers", arr);
                 sendJsonResponse(socket, 200, res);
+            } else if (path.equals("/api/peers/register")) {
+                // Read request body JSON
+                long contentLen = Long.parseLong(headers.getOrDefault("content-length", "0"));
+                if (contentLen > 0) {
+                    byte[] bodyBytes = new byte[(int) Math.min(contentLen, 16384)];
+                    int read = bin.read(bodyBytes);
+                    if (read > 0) {
+                        JSONObject regObj = new JSONObject(new String(bodyBytes, 0, read, StandardCharsets.UTF_8));
+                        String id = regObj.optString("id");
+                        String name = regObj.optString("name", "Device");
+                        String ip = socket.getInetAddress().getHostAddress();
+                        int pPort = regObj.optInt("port", port);
+                        registerDiscoveredPeer(id, name, ip, pPort, regObj.optString("deviceType", "phone"));
+                    }
+                }
+                JSONObject ok = new JSONObject().put("success", true);
+                sendJsonResponse(socket, 200, ok);
+            } else if (path.equals("/api/handshake")) {
+                JSONObject hs = new JSONObject();
+                hs.put("success", true);
+                hs.put("sessionToken", "hd_token_" + UUID.randomUUID().toString().substring(0, 8));
+                hs.put("maxChunkSize", 6 * 1024 * 1024); // 6MB high-speed chunks
+                sendJsonResponse(socket, 200, hs);
             } else if (path.equals("/api/diagnostics")) {
                 JSONObject res = new JSONObject();
                 res.put("success", true);
                 JSONObject diag = new JSONObject();
                 diag.put("interfaceName", "wlan0 (Wi-Fi)");
                 diag.put("interfaceType", "Wi-Fi Direct / Local Hotspot");
-                diag.put("localIp", socket.getLocalAddress().getHostAddress());
+                diag.put("localIp", getLocalIpAddress());
                 diag.put("subnetMask", "255.255.255.0");
-                diag.put("gatewayIp", "192.168.43.1");
+                diag.put("gatewayIp", getGatewayIp() != null ? getGatewayIp() : "192.168.43.1");
                 diag.put("isHotspot", true);
                 diag.put("discoveryEngineStatus", "Autonomous Native (Active)");
                 diag.put("offlineModeHealth", "100% Offline Hotspot Engine Running");
@@ -205,6 +474,21 @@ public class LocalHyperDropServer {
                 }
                 res.put("files", arr);
                 sendJsonResponse(socket, 200, res);
+            } else if (path.startsWith("/api/vault/upload-status/")) {
+                String fid = path.substring(path.lastIndexOf('/') + 1);
+                FileUploadSession s = activeUploads.get(fid);
+                JSONObject stat = new JSONObject();
+                stat.put("success", true);
+                JSONObject sdata = new JSONObject();
+                if (s != null) {
+                    sdata.put("fileId", fid);
+                    sdata.put("nextChunkIndex", s.chunksReceived.size());
+                } else {
+                    sdata.put("fileId", fid);
+                    sdata.put("nextChunkIndex", 0);
+                }
+                stat.put("status", sdata);
+                sendJsonResponse(socket, 200, stat);
             } else if (path.equals("/api/vault/upload-chunk")) {
                 handleChunkUpload(socket, bin, headers, queryParams);
             } else if (path.startsWith("/api/vault/preview/") || path.startsWith("/api/vault/download/")) {
@@ -251,7 +535,7 @@ public class LocalHyperDropServer {
             activeUploads.put(fileId, session);
         }
 
-        // Read chunk body directly from stream and write to disk
+        // Direct high-throughput chunk streaming to disk
         byte[] buffer = new byte[64 * 1024];
         long remaining = contentLength;
         session.raf.seek(startByte);
@@ -270,7 +554,7 @@ public class LocalHyperDropServer {
 
         int percent = (int) Math.min(100, Math.round((session.bytesReceived * 100.0) / Math.max(1, session.fileSize)));
 
-        // Broadcast progress over WebSocket
+        // Broadcast progress over WebSocket to mobile screen
         JSONObject progressMsg = new JSONObject();
         progressMsg.put("type", "transfer_stream_progress");
         JSONObject progressData = new JSONObject();
@@ -284,7 +568,7 @@ public class LocalHyperDropServer {
         progressMsg.put("data", progressData);
         broadcastWebSocket(progressMsg.toString());
 
-        // Check if finished
+        // Check if all chunks completed
         if (session.chunksReceived.size() >= session.totalChunks) {
             session.raf.close();
             activeUploads.remove(fileId);
@@ -304,7 +588,7 @@ public class LocalHyperDropServer {
             completeMsg.put("data", vaultItem);
             broadcastWebSocket(completeMsg.toString());
 
-            // Scan media library
+            // Scan media library so photos/videos immediately show in Gallery
             android.media.MediaScannerConnection.scanFile(context, new String[]{session.targetFile.getAbsolutePath()}, null, null);
         }
 
@@ -490,7 +774,7 @@ public class LocalHyperDropServer {
                 peerData.put("name", name);
                 peerData.put("deviceType", msg.optString("deviceType", "phone"));
                 peerData.put("osType", "Android");
-                peerData.put("avatar", "📱");
+                peerData.put("avatar", "\uD83D\uDCF1");
                 peerData.put("url", "http://" + client.socket.getInetAddress().getHostAddress() + ":" + port);
                 peerData.put("ip", client.socket.getInetAddress().getHostAddress());
                 peerData.put("lastSeen", System.currentTimeMillis());
@@ -569,6 +853,58 @@ public class LocalHyperDropServer {
         if (fileName.endsWith(".mp4")) return "video/mp4";
         if (fileName.endsWith(".mp3")) return "audio/mpeg";
         if (fileName.endsWith(".pdf")) return "application/pdf";
+        if (fileName.endsWith(".apk")) return "application/vnd.android.package-archive";
         return "application/octet-stream";
+    }
+
+    private boolean isSelfIp(String ip) {
+        if (ip == null) return false;
+        if (ip.equals("127.0.0.1") || ip.equals("0.0.0.0") || ip.equals("::1")) return true;
+        String local = getLocalIpAddress();
+        return local != null && local.equals(ip);
+    }
+
+    private String getGatewayIp() {
+        try {
+            WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                DhcpInfo dhcp = wifi.getDhcpInfo();
+                if (dhcp != null && dhcp.gateway != 0) {
+                    return String.format(Locale.US, "%d.%d.%d.%d",
+                            (dhcp.gateway & 0xff),
+                            (dhcp.gateway >> 8 & 0xff),
+                            (dhcp.gateway >> 16 & 0xff),
+                            (dhcp.gateway >> 24 & 0xff));
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private String getLocalIpAddress() {
+        try {
+            WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                int ip = wifi.getConnectionInfo().getIpAddress();
+                if (ip != 0) {
+                    return String.format(Locale.US, "%d.%d.%d.%d",
+                            (ip & 0xff),
+                            (ip >> 8 & 0xff),
+                            (ip >> 16 & 0xff),
+                            (ip >> 24 & 0xff));
+                }
+            }
+            // Fallback to NetworkInterface
+            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
+                NetworkInterface intf = en.nextElement();
+                for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements();) {
+                    InetAddress inetAddress = enumIpAddr.nextElement();
+                    if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
+                        return inetAddress.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return "127.0.0.1";
     }
 }
