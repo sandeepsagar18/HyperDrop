@@ -115,8 +115,11 @@ class VaultManager extends EventEmitter {
             throw err;
         }
 
+        const isNewChunk = !upload.chunksReceived.has(Number(chunkIndex));
         upload.chunksReceived.add(Number(chunkIndex));
-        upload.bytesReceived += chunkBuffer.length;
+        if (isNewChunk) {
+            upload.bytesReceived += chunkBuffer.length;
+        }
 
         // Speed & ETA calculations
         const now = Date.now();

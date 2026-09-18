@@ -1,9 +1,9 @@
 -- Merging decision tree log ---
 manifest
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-36:12
-INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-36:12
-INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-36:12
-INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-36:12
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-37:12
+INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-37:12
+INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-37:12
+INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:2:1-37:12
 MERGED from [com.google.android.material:material:1.11.0] C:\Users\asus\.gradle\caches\9.3.1\transforms\d3ba158ec15a661663af49a814bdc876\workspace\transformed\material-1.11.0\AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.appcompat:appcompat-resources:1.6.1] C:\Users\asus\.gradle\caches\9.3.1\transforms\ecf8aefdbd498ba021f5d4c3fd9d6934\workspace\transformed\jetified-appcompat-resources-1.6.1\AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.constraintlayout:constraintlayout:2.0.1] C:\Users\asus\.gradle\caches\9.3.1\transforms\6586ca4bdff8f4bc7d8bd5e2f1bb46ca\workspace\transformed\constraintlayout-2.0.1\AndroidManifest.xml:2:1-11:12
@@ -69,37 +69,41 @@ uses-permission#android.permission.CHANGE_WIFI_MULTICAST_STATE
 ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:7:5-86
 	android:name
 		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:7:22-83
+uses-permission#android.permission.WAKE_LOCK
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:8:5-68
+	android:name
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:8:22-65
 uses-permission#android.permission.READ_EXTERNAL_STORAGE
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:8:5-107
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:9:5-107
 	android:maxSdkVersion
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:8:78-104
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:9:78-104
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:8:22-77
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:9:22-77
 uses-permission#android.permission.WRITE_EXTERNAL_STORAGE
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:9:5-108
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:10:5-108
 	android:maxSdkVersion
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:9:79-105
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:10:79-105
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:9:22-78
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:10:22-78
 uses-permission#android.permission.READ_MEDIA_IMAGES
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:10:5-76
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:11:5-76
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:10:22-73
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:11:22-73
 uses-permission#android.permission.READ_MEDIA_VIDEO
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:11:5-75
-	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:11:22-72
-uses-permission#android.permission.READ_MEDIA_AUDIO
 ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:12:5-75
 	android:name
 		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:12:22-72
-uses-permission#android.permission.CAMERA
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:13:5-65
+uses-permission#android.permission.READ_MEDIA_AUDIO
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:13:5-75
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:13:22-62
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:13:22-72
+uses-permission#android.permission.CAMERA
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:14:5-65
+	android:name
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:14:22-62
 application
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:15:5-34:19
-INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:15:5-34:19
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:16:5-35:19
+INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:16:5-35:19
 MERGED from [com.google.android.material:material:1.11.0] C:\Users\asus\.gradle\caches\9.3.1\transforms\d3ba158ec15a661663af49a814bdc876\workspace\transformed\material-1.11.0\AndroidManifest.xml:22:5-20
 MERGED from [com.google.android.material:material:1.11.0] C:\Users\asus\.gradle\caches\9.3.1\transforms\d3ba158ec15a661663af49a814bdc876\workspace\transformed\material-1.11.0\AndroidManifest.xml:22:5-20
 MERGED from [androidx.constraintlayout:constraintlayout:2.0.1] C:\Users\asus\.gradle\caches\9.3.1\transforms\6586ca4bdff8f4bc7d8bd5e2f1bb46ca\workspace\transformed\constraintlayout-2.0.1\AndroidManifest.xml:9:5-20
@@ -121,39 +125,39 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] C:\Users\asus\.gradle\cache
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.9.0] C:\Users\asus\.gradle\caches\9.3.1\transforms\6ae192a8ad13c6c265996cb47da21259\workspace\transformed\core-1.9.0\AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:20:9-35
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:21:9-35
 	android:label
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:18:9-34
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:19:9-34
 	android:roundIcon
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:19:9-48
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:20:9-48
 	android:icon
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:17:9-43
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:18:9-43
 	android:allowBackup
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:16:9-35
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:17:9-35
 	android:theme
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:21:9-59
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:22:9-59
 	android:usesCleartextTraffic
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:22:9-44
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:23:9-44
 activity#com.hyperdrop.app.MainActivity
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:24:9-33:20
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:25:9-34:20
 	android:windowSoftInputMode
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:28:13-55
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:29:13-55
 	android:exported
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:27:13-36
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:28:13-36
 	android:configChanges
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:26:13-74
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:27:13-74
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:25:13-41
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:26:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:29:13-32:29
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:30:13-33:29
 action#android.intent.action.MAIN
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:30:17-69
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:31:17-69
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:30:25-66
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:31:25-66
 category#android.intent.category.LAUNCHER
-ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:31:17-77
+ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:32:17-77
 	android:name
-		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:31:27-74
+		ADDED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml:32:27-74
 uses-sdk
 INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from D:\My_Project\HyperDrop\android\app\src\main\AndroidManifest.xml

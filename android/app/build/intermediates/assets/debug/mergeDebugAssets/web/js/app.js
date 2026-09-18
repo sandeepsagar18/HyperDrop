@@ -1340,20 +1340,16 @@ class HyperDropApp {
             await transport.connect({ clientId: this.clientId, clientName: this.clientName || 'Laptop' });
         }
 
-        // Dynamic Adaptive Chunk Sizing for Large & Massive Files
-        let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB default
-        if (file.size > 5 * 1024 * 1024 * 1024) {
-            CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks for massive files (>5GB)
-        } else if (file.size > 1024 * 1024 * 1024) {
-            CHUNK_SIZE = 8 * 1024 * 1024;  // 8MB chunks for large files (1GB - 5GB)
-        } else if (file.size < 30 * 1024 * 1024) {
-            CHUNK_SIZE = 2 * 1024 * 1024;  // 2MB chunks for small files (<30MB)
+        // Adaptive Chunk Sizing optimized for mobile RAM & high throughput
+        let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB standard chunk (optimal for mobile & desktop)
+        if (file.size < 20 * 1024 * 1024) {
+            CHUNK_SIZE = 1024 * 1024;      // 1MB chunks for small files (<20MB)
         }
 
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
         const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(0);
 
-        console.log(`[TRANSFER] Starting Ultra-High-Speed Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Adaptive Chunks (${totalChunks} chunks) to ${peer.name}`);
+        console.log(`[TRANSFER] Starting Resilient Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Chunks (${totalChunks} chunks) to ${peer.name}`);
 
         const abortController = new AbortController();
 
@@ -1398,92 +1394,146 @@ class HyperDropApp {
                 }));
             }
 
-            let bytesTransferred = 0;
             let lastTime = Date.now();
             let lastBytes = 0;
 
             // Check if resumable transfer
             let startChunkIndex = 0;
+            const completedChunks = new Set();
+
             if (typeof transport.checkResumeStatus === 'function') {
                 try {
                     const resumeInfo = await transport.checkResumeStatus(workerId);
                     if (resumeInfo && resumeInfo.startChunkIndex > 0) {
                         startChunkIndex = resumeInfo.startChunkIndex;
-                        bytesTransferred = Math.min(file.size, startChunkIndex * CHUNK_SIZE);
-                        workerData.bytesTransferred = bytesTransferred;
-                        workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+                        for (let k = 0; k < startChunkIndex; k++) {
+                            completedChunks.add(k);
+                        }
+                        const initBytes = Math.min(file.size, startChunkIndex * CHUNK_SIZE);
+                        workerData.bytesTransferred = initBytes;
+                        workerData.percent = Math.min(100, Math.round((initBytes / file.size) * 100));
                         console.log(`[TRANSFER] Resuming "${fileName}" from chunk ${startChunkIndex}/${totalChunks}`);
                     }
                 } catch (_) {}
             }
 
-            // Stream chunks sequentially with low memory overhead
+            // Fault-Tolerant Concurrent Work Queue
+            const chunkQueue = [];
             for (let i = startChunkIndex; i < totalChunks; i++) {
-                if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                    console.log(`[TRANSFER] Aborted "${fileName}" at chunk ${i}/${totalChunks}`);
-                    return;
-                }
-
-                const startByte = i * CHUNK_SIZE;
-                const endByte = Math.min(file.size, startByte + CHUNK_SIZE);
-                const chunkBlob = file.slice(startByte, endByte);
-
-                const chunkResult = await transport.sendChunk(chunkBlob, {
-                    fileId: workerId,
-                    fileName: fileName,
-                    fileSize: file.size,
-                    chunkIndex: i,
-                    totalChunks: totalChunks,
-                    startByte: startByte,
-                    senderId: this.clientId,
-                    senderName: this.clientName || 'Laptop',
-                    signal: abortController.signal
-                });
-
-                if (chunkResult && chunkResult.cancelled) {
-                    return;
-                }
-
-                bytesTransferred += chunkBlob.size;
-                workerData.bytesTransferred = bytesTransferred;
-                workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
-
-                const now = Date.now();
-                const deltaMs = now - lastTime;
-                if (deltaMs >= 150 || i === totalChunks - 1) {
-                    const deltaBytes = bytesTransferred - lastBytes;
-                    const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
-                    workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                    workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
-                    if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
-                    const rem = Math.max(0, file.size - bytesTransferred);
-                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
-
-                    lastTime = now;
-                    lastBytes = bytesTransferred;
-                    this.renderTransferEngine();
-
-                    // Live progress update to recipient device
-                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        this.ws.send(JSON.stringify({
-                            type: 'transfer_stream_progress',
-                            data: {
-                                fileId: workerId,
-                                fileName: fileName,
-                                fileSize: file.size,
-                                bytesTransferred: bytesTransferred,
-                                percent: workerData.percent,
-                                speedMBs: workerData.speedMBs,
-                                etaSeconds: workerData.etaSeconds,
-                                senderId: this.clientId,
-                                senderName: this.clientName || 'Laptop',
-                                targetPeerId: peer.id || 'all',
-                                status: 'receiving'
-                            }
-                        }));
-                    }
+                if (!completedChunks.has(i)) {
+                    chunkQueue.push(i);
                 }
             }
+
+            const chunkRetryCount = new Map();
+            const CONCURRENCY = 3; // 3 concurrent streams for optimal throughput & zero socket stalls
+            let fatalError = null;
+
+            const processWorker = async () => {
+                while (chunkQueue.length > 0 && !fatalError) {
+                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
+                        return;
+                    }
+
+                    const chunkIdx = chunkQueue.shift();
+                    if (chunkIdx === undefined) break;
+
+                    const startByte = chunkIdx * CHUNK_SIZE;
+                    const endByte = Math.min(file.size, startByte + CHUNK_SIZE);
+                    const chunkBlob = file.slice(startByte, endByte);
+
+                    try {
+                        const chunkResult = await transport.sendChunk(chunkBlob, {
+                            fileId: workerId,
+                            fileName: fileName,
+                            fileSize: file.size,
+                            chunkIndex: chunkIdx,
+                            totalChunks: totalChunks,
+                            startByte: startByte,
+                            senderId: this.clientId,
+                            senderName: this.clientName || 'Laptop',
+                            signal: abortController.signal
+                        });
+
+                        if (chunkResult && chunkResult.cancelled) {
+                            return;
+                        }
+
+                        completedChunks.add(chunkIdx);
+                        
+                        let currentBytes = 0;
+                        for (const idx of completedChunks) {
+                            const cStart = idx * CHUNK_SIZE;
+                            const cEnd = Math.min(file.size, cStart + CHUNK_SIZE);
+                            currentBytes += (cEnd - cStart);
+                        }
+                        workerData.bytesTransferred = Math.min(file.size, currentBytes);
+                        workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
+
+                        const now = Date.now();
+                        const deltaMs = now - lastTime;
+                        if (deltaMs >= 200 || workerData.bytesTransferred === file.size) {
+                            const deltaBytes = workerData.bytesTransferred - lastBytes;
+                            const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
+                            workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                            workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
+                            if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
+                            const rem = Math.max(0, file.size - workerData.bytesTransferred);
+                            workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+
+                            lastTime = now;
+                            lastBytes = workerData.bytesTransferred;
+                            this.renderTransferEngine();
+
+                            // Live progress update to recipient device
+                            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                this.ws.send(JSON.stringify({
+                                    type: 'transfer_stream_progress',
+                                    data: {
+                                        fileId: workerId,
+                                        fileName: fileName,
+                                        fileSize: file.size,
+                                        bytesTransferred: workerData.bytesTransferred,
+                                        percent: workerData.percent,
+                                        speedMBs: workerData.speedMBs,
+                                        etaSeconds: workerData.etaSeconds,
+                                        senderId: this.clientId,
+                                        senderName: this.clientName || 'Laptop',
+                                        targetPeerId: peer.id || 'all',
+                                        status: 'receiving'
+                                    }
+                                }));
+                            }
+                        }
+                    } catch (err) {
+                        if (workerData.isCancelled || workerData.status === 'cancelled' || abortController.signal.aborted) {
+                            return;
+                        }
+
+                        const retries = (chunkRetryCount.get(chunkIdx) || 0) + 1;
+                        chunkRetryCount.set(chunkIdx, retries);
+                        console.warn(`[TRANSFER] Chunk ${chunkIdx} failed (attempt ${retries}/10):`, err.message);
+
+                        if (retries >= 10) {
+                            fatalError = new Error(`Failed to transmit chunk ${chunkIdx} after 10 attempts: ${err.message}`);
+                            throw fatalError;
+                        } else {
+                            // Re-queue chunk with brief pause to allow network jitter to recover
+                            await new Promise(r => setTimeout(r, Math.min(2500, 300 * retries)));
+                            chunkQueue.push(chunkIdx);
+                        }
+                    }
+                }
+            };
+
+            const pool = [];
+            const activeStreams = Math.min(CONCURRENCY, chunkQueue.length || 1);
+            for (let c = 0; c < activeStreams; c++) {
+                pool.push(processWorker());
+            }
+
+            await Promise.all(pool);
+            if (fatalError) throw fatalError;
 
             if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
                 return;

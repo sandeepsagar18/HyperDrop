@@ -116,6 +116,9 @@ public class MainActivity extends AppCompatActivity {
 
         prefs = getSharedPreferences("hyperdrop_prefs", MODE_PRIVATE);
 
+        // Keep screen on during active transfers and app usage
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
         webView = new WebView(this);
         setContentView(webView);
 
@@ -208,12 +211,21 @@ public class MainActivity extends AppCompatActivity {
 
     private void startContinuousDiscoveryDaemon() {
         new Thread(() -> {
+            int consecutiveFailures = 0;
             while (!isFinishing()) {
-                if (currentActiveServer == null || !isServerReachable(currentActiveServer + "/api/status")) {
+                if (currentActiveServer != null) {
+                    if (isServerReachable(currentActiveServer + "/api/status")) {
+                        consecutiveFailures = 0;
+                    } else {
+                        consecutiveFailures++;
+                    }
+                }
+                
+                if (currentActiveServer == null || consecutiveFailures >= 3) {
                     startDynamicSubnetScan();
                 }
                 try {
-                    Thread.sleep(3000);
+                    Thread.sleep(4000);
                 } catch (InterruptedException ignored) {}
             }
         }).start();
@@ -284,14 +296,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void applyActiveServer(String activeServer) {
+        if (activeServer == null) return;
+        boolean isSameServer = activeServer.equals(currentActiveServer);
         currentActiveServer = activeServer;
         String rawIp = activeServer.replace("http://", "").split(":")[0];
         prefs.edit().putString("last_server_ip", rawIp).apply();
 
-        runOnUiThread(() -> {
-            injectServerUrl(activeServer);
-            Toast.makeText(MainActivity.this, "⚡ Connected to HyperDrop: " + rawIp, Toast.LENGTH_SHORT).show();
-        });
+        if (!isSameServer) {
+            runOnUiThread(() -> {
+                injectServerUrl(activeServer);
+                Toast.makeText(MainActivity.this, "⚡ Connected to HyperDrop: " + rawIp, Toast.LENGTH_SHORT).show();
+            });
+        }
     }
 
     private void injectServerUrl(String activeServer) {
@@ -346,8 +362,8 @@ public class MainActivity extends AppCompatActivity {
         try {
             URL url = new URL(targetUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(600);
-            conn.setReadTimeout(600);
+            conn.setConnectTimeout(2500);
+            conn.setReadTimeout(2500);
             conn.setRequestMethod("GET");
             int code = conn.getResponseCode();
             return (code >= 200 && code < 400);

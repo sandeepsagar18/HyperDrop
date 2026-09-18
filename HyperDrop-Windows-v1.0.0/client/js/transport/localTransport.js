@@ -87,12 +87,21 @@ class LocalTransport extends TransferTransport {
 
         let chunkUploaded = false;
         let retryCount = 0;
-        const maxRetries = 4;
+        const maxRetries = 8;
 
         while (!chunkUploaded && retryCount < maxRetries) {
             if (signal && signal.aborted) {
                 return { cancelled: true };
             }
+
+            // Create per-chunk timeout controller (45 seconds per chunk)
+            const timeoutController = new AbortController();
+            const timeoutId = setTimeout(() => timeoutController.abort(), 45000);
+
+            // Link parent abort signal if present
+            const onParentAbort = () => timeoutController.abort();
+            if (signal) signal.addEventListener('abort', onParentAbort, { once: true });
+
             try {
                 const res = await fetch(uploadUrl, {
                     method: 'POST',
@@ -104,16 +113,22 @@ class LocalTransport extends TransferTransport {
                         'X-Chunk-Start': String(startByte)
                     },
                     body: chunkBlob,
-                    signal
+                    signal: timeoutController.signal
                 });
 
+                clearTimeout(timeoutId);
+                if (signal) signal.removeEventListener('abort', onParentAbort);
+
                 if (!res.ok) {
-                    const errText = await res.text();
+                    const errText = await res.text().catch(() => '');
                     throw new Error(`HTTP ${res.status}: ${errText}`);
                 }
                 chunkUploaded = true;
                 return { success: true };
             } catch (err) {
+                clearTimeout(timeoutId);
+                if (signal) signal.removeEventListener('abort', onParentAbort);
+
                 if (signal && signal.aborted) {
                     return { cancelled: true };
                 }
@@ -122,7 +137,8 @@ class LocalTransport extends TransferTransport {
                 if (retryCount >= maxRetries) {
                     throw err;
                 }
-                await new Promise(r => setTimeout(r, 250 * retryCount));
+                // Adaptive backoff before retrying this chunk
+                await new Promise(r => setTimeout(r, Math.min(2000, 300 * retryCount)));
             }
         }
     }
