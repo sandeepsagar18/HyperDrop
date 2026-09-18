@@ -1417,73 +1417,92 @@ class HyperDropApp {
                 } catch (_) {}
             }
 
-            // Stream chunks sequentially with low memory overhead
-            for (let i = startChunkIndex; i < totalChunks; i++) {
-                if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
-                    console.log(`[TRANSFER] Aborted "${fileName}" at chunk ${i}/${totalChunks}`);
-                    return;
-                }
+            // Multi-Stream Parallel Pipeline: Stream chunks with 4 concurrent parallel streams
+            const CONCURRENCY = (file.size > 500 * 1024 * 1024) ? 4 : 3;
+            let currentChunkIndex = startChunkIndex;
+            let activeErrors = null;
 
-                const startByte = i * CHUNK_SIZE;
-                const endByte = Math.min(file.size, startByte + CHUNK_SIZE);
-                const chunkBlob = file.slice(startByte, endByte);
+            const sendNextChunk = async () => {
+                while (currentChunkIndex < totalChunks) {
+                    if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName) || activeErrors) {
+                        return;
+                    }
 
-                const chunkResult = await transport.sendChunk(chunkBlob, {
-                    fileId: workerId,
-                    fileName: fileName,
-                    fileSize: file.size,
-                    chunkIndex: i,
-                    totalChunks: totalChunks,
-                    startByte: startByte,
-                    senderId: this.clientId,
-                    senderName: this.clientName || 'Laptop',
-                    signal: abortController.signal
-                });
+                    const i = currentChunkIndex++;
+                    const startByte = i * CHUNK_SIZE;
+                    const endByte = Math.min(file.size, startByte + CHUNK_SIZE);
+                    const chunkBlob = file.slice(startByte, endByte);
 
-                if (chunkResult && chunkResult.cancelled) {
-                    return;
-                }
+                    try {
+                        const chunkResult = await transport.sendChunk(chunkBlob, {
+                            fileId: workerId,
+                            fileName: fileName,
+                            fileSize: file.size,
+                            chunkIndex: i,
+                            totalChunks: totalChunks,
+                            startByte: startByte,
+                            senderId: this.clientId,
+                            senderName: this.clientName || 'Laptop',
+                            signal: abortController.signal
+                        });
 
-                bytesTransferred += chunkBlob.size;
-                workerData.bytesTransferred = bytesTransferred;
-                workerData.percent = Math.min(100, Math.round((bytesTransferred / file.size) * 100));
+                        if (chunkResult && chunkResult.cancelled) {
+                            return;
+                        }
 
-                const now = Date.now();
-                const deltaMs = now - lastTime;
-                if (deltaMs >= 150 || i === totalChunks - 1) {
-                    const deltaBytes = bytesTransferred - lastBytes;
-                    const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
-                    workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                    workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
-                    if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
-                    const rem = Math.max(0, file.size - bytesTransferred);
-                    workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+                        bytesTransferred += chunkBlob.size;
+                        workerData.bytesTransferred = Math.min(file.size, bytesTransferred);
+                        workerData.percent = Math.min(100, Math.round((workerData.bytesTransferred / file.size) * 100));
 
-                    lastTime = now;
-                    lastBytes = bytesTransferred;
-                    this.renderTransferEngine();
+                        const now = Date.now();
+                        const deltaMs = now - lastTime;
+                        if (deltaMs >= 150 || workerData.bytesTransferred === file.size) {
+                            const deltaBytes = bytesTransferred - lastBytes;
+                            const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
+                            workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
+                            workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
+                            if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
+                            const rem = Math.max(0, file.size - bytesTransferred);
+                            workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
 
-                    // Live progress update to recipient device
-                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        this.ws.send(JSON.stringify({
-                            type: 'transfer_stream_progress',
-                            data: {
-                                fileId: workerId,
-                                fileName: fileName,
-                                fileSize: file.size,
-                                bytesTransferred: bytesTransferred,
-                                percent: workerData.percent,
-                                speedMBs: workerData.speedMBs,
-                                etaSeconds: workerData.etaSeconds,
-                                senderId: this.clientId,
-                                senderName: this.clientName || 'Laptop',
-                                targetPeerId: peer.id || 'all',
-                                status: 'receiving'
+                            lastTime = now;
+                            lastBytes = bytesTransferred;
+                            this.renderTransferEngine();
+
+                            // Live progress update to recipient device
+                            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                this.ws.send(JSON.stringify({
+                                    type: 'transfer_stream_progress',
+                                    data: {
+                                        fileId: workerId,
+                                        fileName: fileName,
+                                        fileSize: file.size,
+                                        bytesTransferred: workerData.bytesTransferred,
+                                        percent: workerData.percent,
+                                        speedMBs: workerData.speedMBs,
+                                        etaSeconds: workerData.etaSeconds,
+                                        senderId: this.clientId,
+                                        senderName: this.clientName || 'Laptop',
+                                        targetPeerId: peer.id || 'all',
+                                        status: 'receiving'
+                                    }
+                                }));
                             }
-                        }));
+                        }
+                    } catch (err) {
+                        activeErrors = err;
+                        throw err;
                     }
                 }
+            };
+
+            const pipelineWorkers = [];
+            const activePool = Math.min(CONCURRENCY, totalChunks - startChunkIndex);
+            for (let c = 0; c < activePool; c++) {
+                pipelineWorkers.push(sendNextChunk());
             }
+            await Promise.all(pipelineWorkers);
+            if (activeErrors) throw activeErrors;
 
             if (workerData.isCancelled || workerData.status === 'cancelled' || this.cancelledTransferIds.has(workerId) || this.cancelledTransferIds.has(fileName)) {
                 return;
