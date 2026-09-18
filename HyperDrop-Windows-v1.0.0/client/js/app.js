@@ -2145,7 +2145,7 @@ class HyperDropApp {
         `;
 
         try {
-            const res = await fetch('/api/diagnostics');
+            const res = await this.apiFetch('/api/diagnostics');
             const data = await res.json();
             if (data.success && data.diagnostics) {
                 const d = data.diagnostics;
