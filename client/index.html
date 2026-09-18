@@ -23,8 +23,11 @@
             
             <!-- TOP BAR: BRAND TITLE (LEFT) & CONTROLS (RIGHT) -->
             <div class="top-nav-bar">
-                <div class="brand-text">
+                <div class="brand-text" style="display:flex; align-items:center;">
                     <span class="brand-name">HyperDrop</span>
+                    <span id="wifi-band-indicator" class="wifi-band-pill" style="font-size: 10px; padding: 2px 8px; border-radius: 12px; background: rgba(0, 242, 254, 0.15); border: 1px solid rgba(0, 242, 254, 0.3); color: var(--neon-cyan); margin-left: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid fa-wifi"></i> <span id="wifi-band-text">Auto Wi-Fi</span>
+                    </span>
                 </div>
 
                 <!-- TOP BUTTONS: SCAN, RENAME, CONNECT, HOTSPOT, DIAGNOSTICS, FEEDBACK -->

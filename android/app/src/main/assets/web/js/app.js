@@ -57,11 +57,51 @@ class HyperDropApp {
         this.fetchVaultStats();
         this.fetchClipboardHistory();
         this.loadQrCode();
+        this.updateWifiBandStatus();
 
         // Fast initial discovery sweep then steady background polling
         setTimeout(() => this.fetchPeers(), 500);
         setTimeout(() => this.fetchPeers(), 1200);
         setInterval(() => this.fetchPeers(), 1500);
+        setInterval(() => this.updateWifiBandStatus(), 2500);
+    }
+
+    updateWifiBandStatus() {
+        const bandText = document.getElementById('wifi-band-text');
+        const bandBadge = document.getElementById('wifi-band-indicator');
+        if (!bandText || !bandBadge) return;
+
+        let wifiLinkSpeedMbps = 0;
+        let is5Ghz = false;
+
+        if (window.AndroidBridge) {
+            try {
+                if (typeof window.AndroidBridge.getWifiLinkSpeed === 'function') {
+                    wifiLinkSpeedMbps = window.AndroidBridge.getWifiLinkSpeed();
+                }
+                if (typeof window.AndroidBridge.getWifiFrequency === 'function') {
+                    const freq = window.AndroidBridge.getWifiFrequency();
+                    is5Ghz = (freq > 4900);
+                }
+            } catch (_) {}
+        }
+
+        if (is5Ghz || wifiLinkSpeedMbps >= 250) {
+            bandText.textContent = `5 GHz (${wifiLinkSpeedMbps || 866} Mbps)`;
+            bandBadge.style.color = '#00f2fe';
+            bandBadge.style.borderColor = 'rgba(0, 242, 254, 0.4)';
+            bandBadge.style.background = 'rgba(0, 242, 254, 0.15)';
+        } else if (wifiLinkSpeedMbps > 0) {
+            bandText.textContent = `2.4 GHz (${wifiLinkSpeedMbps} Mbps)`;
+            bandBadge.style.color = '#ffcc00';
+            bandBadge.style.borderColor = 'rgba(255, 204, 0, 0.4)';
+            bandBadge.style.background = 'rgba(255, 204, 0, 0.15)';
+        } else {
+            bandText.textContent = 'Auto Wi-Fi';
+            bandBadge.style.color = '#00ff88';
+            bandBadge.style.borderColor = 'rgba(0, 255, 136, 0.3)';
+            bandBadge.style.background = 'rgba(0, 255, 136, 0.1)';
+        }
     }
 
     async fetchStatus() {
