@@ -668,6 +668,35 @@ class HyperDropApp {
             this.openModal('qr-modal');
         });
 
+        // 5GHz Direct Hotspot Management
+        const hotspotBtn = document.getElementById('hotspot-btn');
+        if (hotspotBtn) {
+            hotspotBtn.addEventListener('click', () => {
+                this.openModal('hotspot-modal');
+                if (window.AndroidBridge && typeof window.AndroidBridge.startDirectHotspot === 'function') {
+                    window.AndroidBridge.startDirectHotspot();
+                } else {
+                    // Browser / Desktop fallback instructions
+                    const ssidEl = document.getElementById('hotspot-ssid');
+                    const passEl = document.getElementById('hotspot-password');
+                    const qrImg = document.getElementById('hotspot-qr-img');
+                    if (ssidEl) ssidEl.textContent = 'PC / Mobile Hotspot';
+                    if (passEl) passEl.textContent = 'Enable 5GHz Mobile Hotspot in Phone Settings';
+                    if (qrImg) qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.href)}`;
+                }
+            });
+        }
+
+        const toggleHotspotBtn = document.getElementById('toggle-hotspot-btn');
+        if (toggleHotspotBtn) {
+            toggleHotspotBtn.addEventListener('click', () => {
+                if (window.AndroidBridge && typeof window.AndroidBridge.stopDirectHotspot === 'function') {
+                    window.AndroidBridge.stopDirectHotspot();
+                }
+                this.closeModal('hotspot-modal');
+            });
+        }
+
         // Remote WebRTC Connect
         const remoteBtn = document.getElementById('remote-btn');
         if (remoteBtn) {
@@ -825,6 +854,29 @@ class HyperDropApp {
             navigator.clipboard.writeText(text);
             alert('Copied URL: ' + text);
         });
+    }
+
+    onHotspotStarted(ssid, password) {
+        const ssidEl = document.getElementById('hotspot-ssid');
+        const passEl = document.getElementById('hotspot-password');
+        const qrImg = document.getElementById('hotspot-qr-img');
+        if (ssidEl) ssidEl.textContent = ssid;
+        if (passEl) passEl.textContent = password || '(Open / No Password)';
+        
+        // Standard Wi-Fi QR Code payload recognized by all phone cameras
+        const wifiQrData = `WIFI:T:WPA;S:${ssid};P:${password};;`;
+        if (qrImg) {
+            qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(wifiQrData)}`;
+        }
+        this.showToast(`⚡ 5GHz Direct Hotspot started: ${ssid}`);
+    }
+
+    onHotspotStopped() {
+        const ssidEl = document.getElementById('hotspot-ssid');
+        const passEl = document.getElementById('hotspot-password');
+        if (ssidEl) ssidEl.textContent = 'Hotspot Offline';
+        if (passEl) passEl.textContent = '...';
+        this.showToast('Direct Hotspot stopped');
     }
 
     openModal(id) {
@@ -1340,16 +1392,46 @@ class HyperDropApp {
             await transport.connect({ clientId: this.clientId, clientName: this.clientName || 'Laptop' });
         }
 
-        // Adaptive Chunk Sizing optimized for mobile RAM & high throughput
+        // Intelligent Band & Link Speed Detection (5GHz vs 2.4GHz)
+        let wifiLinkSpeedMbps = 0;
+        let is5Ghz = false;
+        if (window.AndroidBridge) {
+            try {
+                if (typeof window.AndroidBridge.getWifiLinkSpeed === 'function') {
+                    wifiLinkSpeedMbps = window.AndroidBridge.getWifiLinkSpeed();
+                }
+                if (typeof window.AndroidBridge.getWifiFrequency === 'function') {
+                    const freq = window.AndroidBridge.getWifiFrequency();
+                    is5Ghz = (freq > 4900);
+                }
+            } catch (_) {}
+        }
+
+        // Adaptive Chunk Sizing & Stream Concurrency based on band & link rate
         let CHUNK_SIZE = 4 * 1024 * 1024; // 4MB standard chunk (optimal for mobile & desktop)
-        if (file.size < 20 * 1024 * 1024) {
-            CHUNK_SIZE = 1024 * 1024;      // 1MB chunks for small files (<20MB)
+        let CONCURRENCY = 3;
+        let bandLabel = '5GHz / Local Wi-Fi';
+
+        if (is5Ghz || wifiLinkSpeedMbps >= 250) {
+            // 5GHz High-Throughput Mode
+            CHUNK_SIZE = file.size > 1024 * 1024 * 1024 ? 6 * 1024 * 1024 : 4 * 1024 * 1024;
+            CONCURRENCY = 3;
+            bandLabel = '🚀 5GHz Ultra-Speed';
+        } else if (wifiLinkSpeedMbps > 0 && wifiLinkSpeedMbps <= 150) {
+            // 2.4 GHz Band Narrow Channel Mode (Low Buffer / Congestion resilient)
+            CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5MB chunks
+            CONCURRENCY = 2;
+            bandLabel = '⚡ 2.4GHz Resilient Mode';
+        } else if (file.size < 20 * 1024 * 1024) {
+            CHUNK_SIZE = 1024 * 1024; // 1MB chunks for small files (<20MB)
+            CONCURRENCY = 2;
+            bandLabel = 'Local Stream';
         }
 
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE) || 1;
-        const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(0);
+        const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(1);
 
-        console.log(`[TRANSFER] Starting Resilient Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Chunks (${totalChunks} chunks) to ${peer.name}`);
+        console.log(`[TRANSFER] Starting Resilient Local Streaming for "${fileName}" (${this.formatBytes(file.size)}) using ${chunkSizeMB}MB Chunks (${totalChunks} chunks | ${bandLabel}) to ${peer.name}`);
 
         const abortController = new AbortController();
 
@@ -1365,7 +1447,7 @@ class HyperDropApp {
             speedMBs: 0.0,
             speedMbps: 0.0,
             etaSeconds: 0,
-            transportMode: `Local Wi-Fi (${chunkSizeMB}MB Chunks)`,
+            transportMode: `${bandLabel} (${chunkSizeMB}MB Chunks)`,
             startTime: Date.now(),
             abortController: abortController
         };
@@ -1472,14 +1554,23 @@ class HyperDropApp {
 
                         const now = Date.now();
                         const deltaMs = now - lastTime;
-                        if (deltaMs >= 200 || workerData.bytesTransferred === file.size) {
+                        if (deltaMs >= 250 || workerData.bytesTransferred === file.size) {
                             const deltaBytes = workerData.bytesTransferred - lastBytes;
                             const speedBps = (deltaBytes / (Math.max(1, deltaMs) / 1000));
-                            workerData.speedMBs = parseFloat((speedBps / (1024 * 1024)).toFixed(1));
-                            workerData.speedMbps = parseFloat(((deltaBytes * 8) / (Math.max(1, deltaMs) / 1000) / 1000000).toFixed(1));
+                            const instMBs = speedBps / (1024 * 1024);
+                            
+                            // Exponential Moving Average (EMA) to stabilize bursty chunk metrics
+                            if (!workerData.speedMBs || workerData.speedMBs === 0) {
+                                workerData.speedMBs = parseFloat(instMBs.toFixed(1));
+                            } else {
+                                workerData.speedMBs = parseFloat((0.65 * workerData.speedMBs + 0.35 * instMBs).toFixed(1));
+                            }
+                            workerData.speedMbps = parseFloat((workerData.speedMBs * 8).toFixed(1));
+
                             if (workerData.speedMBs > this.peakSpeedMBs) this.peakSpeedMBs = workerData.speedMBs;
                             const rem = Math.max(0, file.size - workerData.bytesTransferred);
-                            workerData.etaSeconds = speedBps > 0 ? Math.ceil(rem / speedBps) : 0;
+                            const smoothedBps = workerData.speedMBs * 1024 * 1024;
+                            workerData.etaSeconds = smoothedBps > 0 ? Math.ceil(rem / smoothedBps) : 0;
 
                             lastTime = now;
                             lastBytes = workerData.bytesTransferred;

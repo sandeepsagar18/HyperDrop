@@ -55,6 +55,7 @@ public class MainActivity extends AppCompatActivity {
     private String currentActiveServer = null;
     private final AtomicBoolean isScanning = new AtomicBoolean(false);
     private final ExecutorService scanPool = Executors.newFixedThreadPool(25);
+    private WifiManager.LocalOnlyHotspotReservation hotspotReservation = null;
 
     public class AndroidBridge {
         @JavascriptInterface
@@ -106,6 +107,102 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error saving: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                 }
             }).start();
+        }
+
+        @JavascriptInterface
+        public void startDirectHotspot() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wifiManager != null) {
+                    runOnUiThread(() -> {
+                        try {
+                            wifiManager.startLocalOnlyHotspot(new WifiManager.LocalOnlyHotspotCallback() {
+                                @Override
+                                public void onStarted(WifiManager.LocalOnlyHotspotReservation reservation) {
+                                    super.onStarted(reservation);
+                                    hotspotReservation = reservation;
+                                    String ssid = "";
+                                    String password = "";
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && reservation.getSoftApConfiguration() != null) {
+                                        ssid = reservation.getSoftApConfiguration().getSsid();
+                                        password = reservation.getSoftApConfiguration().getPassphrase();
+                                    } else if (reservation.getWifiConfiguration() != null) {
+                                        ssid = reservation.getWifiConfiguration().SSID;
+                                        password = reservation.getWifiConfiguration().preSharedKey;
+                                    }
+                                    final String finalSsid = ssid != null ? ssid : "HyperDrop-Direct";
+                                    final String finalPassword = password != null ? password : "";
+                                    runOnUiThread(() -> {
+                                        Toast.makeText(MainActivity.this, "⚡ 5GHz Direct Hotspot Active!", Toast.LENGTH_SHORT).show();
+                                        if (webView != null) {
+                                            webView.evaluateJavascript(
+                                                "if (window.app && window.app.onHotspotStarted) { " +
+                                                "  window.app.onHotspotStarted('" + finalSsid + "', '" + finalPassword + "'); " +
+                                                "}", null);
+                                        }
+                                    });
+                                }
+
+                                @Override
+                                public void onStopped() {
+                                    super.onStopped();
+                                    hotspotReservation = null;
+                                    runOnUiThread(() -> {
+                                        if (webView != null) {
+                                            webView.evaluateJavascript("if (window.app && window.app.onHotspotStopped) { window.app.onHotspotStopped(); }", null);
+                                        }
+                                    });
+                                }
+
+                                @Override
+                                public void onFailed(int reason) {
+                                    super.onFailed(reason);
+                                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Hotspot start failed (code: " + reason + ")", Toast.LENGTH_LONG).show());
+                                }
+                            }, null);
+                        } catch (Exception e) {
+                            Toast.makeText(MainActivity.this, "Hotspot error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            } else {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Hotspot requires Android 8.0+", Toast.LENGTH_SHORT).show());
+            }
+        }
+
+        @JavascriptInterface
+        public void stopDirectHotspot() {
+            if (hotspotReservation != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    hotspotReservation.close();
+                }
+                hotspotReservation = null;
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Direct Hotspot Stopped", Toast.LENGTH_SHORT).show());
+            }
+        }
+
+        @JavascriptInterface
+        public int getWifiLinkSpeed() {
+            try {
+                WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wifi != null && wifi.getConnectionInfo() != null) {
+                    return wifi.getConnectionInfo().getLinkSpeed();
+                }
+            } catch (Exception ignored) {}
+            return 0;
+        }
+
+        @JavascriptInterface
+        public int getWifiFrequency() {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                    if (wifi != null && wifi.getConnectionInfo() != null) {
+                        return wifi.getConnectionInfo().getFrequency();
+                    }
+                }
+            } catch (Exception ignored) {}
+            return 0;
         }
     }
 
